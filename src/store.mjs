@@ -56,17 +56,16 @@ export class Store {
     return record
   }
 
-  /** Render the transcript and write it to disk (unless the caller opted out). */
+  /** Render the transcript and write it to disk. */
   saveConversation({ prompt, reply, meta, plain = false, out }) {
     const markdown = renderMarkdown(prompt, reply, meta, plain)
-    if (!out && !plain) {
+    if (!out) {
       this.ensure()
       const stamp = nowStamp()
       const slug = slugify(prompt)
       const id = String(meta.conversation_id || '')
       out = join(this.conversations, id ? `${id.slice(0, 8)}-${stamp}-${slug}.md` : `${stamp}-${slug}.md`)
     }
-    if (!out) return { markdown }
     mkdirSync(dirname(out), { recursive: true })
     writeFileSync(out, markdown, 'utf8')
     return { markdown, path: out }

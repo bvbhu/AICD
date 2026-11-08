@@ -146,9 +146,8 @@ gpt last --json
 gpt doctor
 ```
 
-- `ask` 默认把提问+回复写成 `<root>/conversations/<时间>-<摘要>.md`（frontmatter 带 conversation_id / url / title）；`--plain` 只写回复，`--no-save` 不落盘，`--json` 结构化，`--print-id` 只打印 id。
+- `ask` 默认把提问+回复写成 `<root>/conversations/<会话前8位>-<时间>-<摘要>.md`（frontmatter 带 conversation_id / url / title）；`--plain` 只写回复正文，`--no-save` 不落盘，`--json` 结构化，`--print-id` 只打印 id。
 - `image` 默认写 `<root>/images/<时间>-<摘要>.png`；网页返回的就是 PNG。
-- 续聊输出文件名带会话 id 前 8 位。
 - 输出根目录：环境变量 `DSH_GPT_ROOT`；CLI 默认是仓库根，插件默认是 `~/.dsh/gpt-web`，也可在插件配置里用 `root` 指定。
 
 ## 目录
