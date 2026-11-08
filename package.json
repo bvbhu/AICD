@@ -1,0 +1,41 @@
+{
+  "name": "dsh-aicd",
+  "version": "0.2.0",
+  "description": "DSH composite plugin: ChatGPT-web gpt tools (gpt_ask/gpt_image/gpt_last) + the ai漫剧师 agent preset",
+  "type": "module",
+  "main": "./src/gpt-tools.mjs",
+  "exports": {
+    ".": "./src/gpt-tools.mjs",
+    "./bridge": "./src/bridge.mjs",
+    "./chatgpt": "./src/chatgpt.mjs",
+    "./store": "./src/store.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "gpt": "./bin/gpt.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "chatgpt",
+    "browser-control",
+    "agent-preset"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

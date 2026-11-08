@@ -1,0 +1,13 @@
+# Private working material — never publish.
+skills/
+
+# Runtime / generated output
+.state/
+conversations/
+images/
+node_modules/
+.dsh-test/
+*.log
+
+# Agent scratch
+__*
