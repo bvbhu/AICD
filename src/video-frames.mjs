@@ -226,7 +226,7 @@ function startServer(file) {
   })
 }
 
-async function openVideoSession(bridge, file) {
+async function openVideoSession(bridge, file, { keepActive = false } = {}) {
   if (!existsSync(file)) throw new VideoError(`视频文件不存在: ${file}`, 'missing_file')
   const { server, url } = await startServer(file)
   let tabId = 0
@@ -235,6 +235,9 @@ async function openVideoSession(bridge, file) {
     previousActive = (await bridge.listTabs())?.activeTabId || 0
   } catch {}
   const close = async () => {
+    if (previousActive && previousActive !== tabId) {
+      await bridge.command('tabs.activate', { tabId: previousActive }).catch(() => {})
+    }
     if (tabId) await bridge.closeTab(tabId).catch(() => {})
     await new Promise((resolve) => {
       const done = () => resolve()
@@ -258,10 +261,14 @@ async function openVideoSession(bridge, file) {
         .evalIn(tabId, `window.__videoState ? window.__videoState() : null`, { timeoutMs: 15000 })
         .catch(() => null)
       if (state?.ready) {
-        if (previousActive && previousActive !== tabId) {
+        // Keep timers/rAF/media seeking alive even when the Chrome window is not
+        // the foreground app. (Frozen background tabs stall `seeked` entirely.)
+        await bridge.cdp(tabId, 'Page.setWebLifecycleState', { state: 'active' }).catch(() => {})
+        await bridge.cdp(tabId, 'Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {})
+        if (!keepActive && previousActive && previousActive !== tabId) {
           await bridge.command('tabs.activate', { tabId: previousActive }).catch(() => {})
         }
-        return { tabId, url, state, close }
+        return { tabId, url, state, close, previousActive }
       }
       if (state?.error) throw new VideoError(`Chrome 无法解码该视频：${state.error}`, 'decode_failed')
       await sleep(500)
@@ -293,7 +300,10 @@ export async function probeVideo({ bridge, file }) {
  * and return their metadata plus the captured bytes (for model attachments).
  */
 export async function extractFrames({ bridge, file, every, times, from, to, maxFrames = 12, maxWidth = 1280, quality = 0.85, outDir, onProgress }) {
-  const session = await openVideoSession(bridge, String(file))
+  // Chrome freezes/suspends background tabs, which stalls `seeked` and canvas
+  // capture. Keep the probe tab active until every frame is captured, then
+  // restore the user's tab when the session closes.
+  const session = await openVideoSession(bridge, String(file), { keepActive: true })
   try {
     const duration = session.state.duration
     const planned = planFrameTimes({ duration, every, times, from, to, maxFrames })
