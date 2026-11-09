@@ -153,7 +153,7 @@ bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭
 ```text
 path       视频路径（mp4 / mov / webm / mkv … Chrome 能解码的格式）
 every      按间隔截帧，单位秒（与 times 二选一）
-times      指定时间点数组，如 [3, "00:12", "1:02:03"]
+times      指定时间点数组（字符串），如 ["3", "00:12", "1:02:03"]
 from/to    间隔模式的起止时间（默认 0 → 视频结尾）
 max_frames 最多截几帧，默认 12、上限 16；超出时按时间均匀抽样
 width      帧最大宽度，默认 1280（只缩小不放大）

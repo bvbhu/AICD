@@ -152,7 +152,7 @@ export function apply(ctx, config = {}) {
         times: {
           type: 'array',
           items: { type: 'string' },
-          description: '按指定时间点截帧：秒数或 mm:ss / hh:mm:ss 字符串数组（与 every 二选一）',
+          description: '按指定时间点截帧：秒数或 mm:ss / hh:mm:ss 字符串数组，如 ["3","00:12","1:02:03"]（与 every 二选一）',
         },
         from: str('间隔模式的起始时间（默认 0，支持秒数或 mm:ss）'),
         to: str('间隔模式的结束时间（默认视频结尾）'),
