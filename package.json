@@ -1,13 +1,15 @@
 {
   "name": "dsh-aicd",
   "version": "0.2.0",
-  "description": "DSH composite plugin: ChatGPT-web gpt tools (gpt_ask/gpt_image/gpt_last) + the ai漫剧师 agent preset",
+  "description": "DSH composite plugin: ChatGPT-web gpt tools + video frame analysis + the ai漫剧师 agent preset",
   "type": "module",
   "main": "./src/gpt-tools.mjs",
   "exports": {
     ".": "./src/gpt-tools.mjs",
+    "./video": "./src/video-tools.mjs",
     "./bridge": "./src/bridge.mjs",
     "./chatgpt": "./src/chatgpt.mjs",
+    "./video-frames": "./src/video-frames.mjs",
     "./store": "./src/store.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"

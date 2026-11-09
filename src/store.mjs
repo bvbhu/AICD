@@ -30,13 +30,14 @@ export class Store {
     this.root = root
     this.conversations = join(root, 'conversations')
     this.images = join(root, 'images')
+    this.videoFrames = join(root, 'video-frames')
     this.state = join(root, '.state')
     this.lastFile = join(this.state, 'last.json')
     this.tmp = join(this.state, 'tmp')
   }
 
   ensure() {
-    for (const dir of [this.conversations, this.images, this.state, this.tmp]) mkdirSync(dir, { recursive: true })
+    for (const dir of [this.conversations, this.images, this.videoFrames, this.state, this.tmp]) mkdirSync(dir, { recursive: true })
     return this
   }
 

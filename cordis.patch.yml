@@ -1,10 +1,13 @@
-# Root-level gpt-tools row: disabled by default so other presets do NOT get the
-# tools by accident. Turn it on (DSH Settings → Plugins, or flip `disabled`) to
-# make gpt_ask/gpt_image/gpt_last available to presets that do not declare the
-# row themselves. The ai漫剧师 preset below always carries its own enabled copy.
+# Root-level tool rows: disabled by default so other presets do NOT get them by
+# accident. Turn one on (DSH Settings → Plugins, or flip `disabled`) to expose it
+# to presets that do not declare the row themselves. The ai漫剧师 preset below
+# always carries its own enabled copies.
 - insert:
     - id: gpt-tools
       name: 'dsh-aicd'
+      disabled: true
+    - id: video-tools
+      name: 'dsh-aicd/video'
       disabled: true
 
 # The ai漫剧师 agent preset (recovered from the old AIGC-Comic-drama project)
@@ -139,6 +142,12 @@
           # gpt tools: gpt_ask / gpt_image / gpt_last (this bundle's plugin entry)
           - id: gpt-tools
             name: 'dsh-aicd'
+            config:
+              bridgeUrl: 'http://127.0.0.1:9777'
+              token: 'dsh-local'
+          # video tools: video_probe / video_frames (cuts frames and attaches them)
+          - id: video-tools
+            name: 'dsh-aicd/video'
             config:
               bridgeUrl: 'http://127.0.0.1:9777'
               token: 'dsh-local'

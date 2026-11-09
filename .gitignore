@@ -5,6 +5,7 @@ skills/
 .state/
 conversations/
 images/
+video-frames/
 node_modules/
 .dsh-test/
 *.log

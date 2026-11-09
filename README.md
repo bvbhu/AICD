@@ -1,11 +1,12 @@
-# AICD — DSH 复合插件：GPT 网页工具 + ai漫剧师预设
+# AICD — DSH 复合插件：GPT 网页工具 + 视频解析 + ai漫剧师预设
 
-一个 DSH bundle，两件事：
+一个 DSH bundle，三件事：
 
 1. **gpt tool** — 把 ChatGPT 网页版变成模型可调用的工具：`gpt_ask`（对话→Markdown）、`gpt_image`（生图→PNG）、`gpt_last`（最近会话 id），另带一个 `gpt` CLI。
-2. **ai漫剧师预设** — 从旧 AIGC 漫剧项目的 git 记录找回的 agent preset（`aigc-comic-pipeline`，全流程模式）。该预设**自带** gpt tool；其他预设默认没有，需要手动启用。
+2. **视频解析** — `video_probe`（时长/分辨率）、`video_frames`（按间隔或指定时间点截帧），并把帧作为图片附加到当前会话，让图像模型直接分析视频。
+3. **ai漫剧师预设** — 从旧 AIGC 漫剧项目的 git 记录找回的 agent preset（`aigc-comic-pipeline`，全流程模式）。该预设**自带** gpt tool 和视频工具；其他预设默认没有，需要手动启用。
 
-gpt tool 不再使用 `chrome-use` / `chatgpt-use` / `image-use`，也不依赖 Python：它通过 **DSH Browser Control 桥接（@angelky7/dsh-browser-control，127.0.0.1:9777）** 驱动你已登录的真实 Chrome，用的就是 DSH `browser_*` 工具那一个 **DSH-Browser-Control Chrome 扩展**。没有 API key，没有 headless，不烧 API 额度。
+gpt 与视频工具都不使用 `chrome-use` / `chatgpt-use` / `image-use`，也不依赖 Python 或 ffmpeg：它们通过 **DSH Browser Control 桥接（@angelky7/dsh-browser-control，127.0.0.1:9777）** 驱动你已登录的真实 Chrome，用的就是 DSH `browser_*` 工具那一个 **DSH-Browser-Control Chrome 扩展**。gpt 走网页会话；视频走一个本地回环 HTTP + 隐藏标签页，由 Chrome 解码后 canvas 截帧。没有 API key，没有 headless，不烧 API 额度。
 
 > 仅供个人使用。把 ChatGPT 网页版当自动化接口批量调用不符合 OpenAI 的服务条款取向，请自行控制频率与风险。
 
@@ -16,9 +17,10 @@ gpt tool 不再使用 `chrome-use` / `chatgpt-use` / `image-use`，也不依赖 
 | 部分 | 内容 |
 | --- | --- |
 | gpt 工具插件 | `src/gpt-tools.mjs` → 注册 `gpt_ask` / `gpt_image` / `gpt_last`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
+| 视频工具插件 | `src/video-tools.mjs` → 注册 `video_probe` / `video_frames`；`src/video-frames.mjs` 负责回环服务、Chrome 解码与 canvas 截帧 |
 | 预设 | `cordis.patch.yml` 插入 `@deepseek-ai/dsh-agent-preset` 行：`id: aigc-comic-pipeline`，`name: ai漫剧师`，`order: 20` |
-| 预设里的 gpt 工具 | 预设 `plugins` 列表里有一行 `id: gpt-tools, name: 'dsh-aicd'` |
-| 其他预设 | 根级 `gpt-tools` 行默认 `disabled: true`；需要时手动启用（见下文） |
+| 预设里的工具 | 预设 `plugins` 列表里有 `id: gpt-tools, name: 'dsh-aicd'` 和 `id: video-tools, name: 'dsh-aicd/video'` |
+| 其他预设 | 根级 `gpt-tools` / `video-tools` 行默认 `disabled: true`；需要时手动启用（见下文） |
 
 ## 运行时序
 
@@ -33,6 +35,13 @@ DSH-Browser-Control Chrome 扩展（v1.7.2）
         │  chrome.debugger → CDP
         ▼
 你已登录的 chatgpt.com 标签页（gpt 每次新开一个后台标签，做完即关）
+
+video_probe / video_frames
+        │  本地回环 HTTP（随机端口 + 随机 token）把视频喂给隐藏标签页
+        ▼
+Chrome <video> 解码 → canvas.drawImage → JPEG
+        ▼
+DSH attachments 服务 → 作为图片块附加到当前会话，交给图像模型分析
 ```
 
 回复不是从 DOM 抄的：它读取 `/backend-api/conversation/<id>` 的 `content.parts`，所以 Markdown 表格、代码块、加粗都保真。
@@ -75,27 +84,30 @@ dsh plugin --profile desktop add link:<repo>
 安装后：
 
 - 新建会话时预设列表里出现 **「ai漫剧师」**；
-- 在 ai漫剧师会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last`；
+- 在 ai漫剧师会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` 和 `video_probe` / `video_frames`；
 - 其他预设（如内置 standard）里**没有**这些工具。
 
 ---
 
-## 其他预设：手动启用 gpt 工具
+## 其他预设：手动启用工具
 
 有两种方式，任选其一。
 
 ### 方式 A：启用根级开关（推荐）
 
-bundle 已经插入了一行根级 `gpt-tools`，默认关闭。在 DSH 的插件/设置界面把它启用（等价于把 `cordis.patch.yml` 里这一行改成 `disabled: false`）：
+bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭。在 DSH 的插件/设置界面启用对应行（等价于把 `cordis.patch.yml` 里该行改成 `disabled: false`）：
 
 ```yaml
 - insert:
     - id: gpt-tools
       name: 'dsh-aicd'
       disabled: false
+    - id: video-tools
+      name: 'dsh-aicd/video'
+      disabled: false
 ```
 
-此后所有未自带 gpt 工具的预设都能看到这三个工具。使用 ai漫剧师预设时建议保持根级关闭（预设本身已有一份），避免同一工具注册两次。
+此后所有未自带这些工具的预设都能看到它们。使用 ai漫剧师预设时建议保持根级关闭（预设本身已有一份），避免同一工具注册两次。
 
 ### 方式 B：写进目标预设的 plugins 列表
 
@@ -104,6 +116,12 @@ bundle 已经插入了一行根级 `gpt-tools`，默认关闭。在 DSH 的插�
 ```yaml
 - id: gpt-tools
   name: 'dsh-aicd'
+  config:
+    bridgeUrl: 'http://127.0.0.1:9777'   # 可选
+    token: 'dsh-local'                   # 可选
+    root: 'D:/path/to/outputs'           # 可选，默认 ~/.dsh/gpt-web
+- id: video-tools
+  name: 'dsh-aicd/video'
   config:
     bridgeUrl: 'http://127.0.0.1:9777'   # 可选
     token: 'dsh-local'                   # 可选
@@ -121,12 +139,33 @@ bundle 已经插入了一行根级 `gpt-tools`，默认关闭。在 DSH 的插�
 | `gpt_ask` | `prompt`(必填)、`file[]`、`conversation`、`out`、`timeout` | `conversation_id`、`text`、Markdown `path`、`url`、`title` |
 | `gpt_image` | `prompt`(必填)、`ref[]`、`out`、`size`、`timeout` | 图片绝对 `path`、`conversation_id`、宽高 |
 | `gpt_last` | — | 最近会话的 `conversation_id` / `url` / `path` |
+| `video_probe` | `path`(必填) | `duration`、视频 `width` / `height` |
+| `video_frames` | `path`(必填)、`every` 或 `times`、`from`、`to`、`max_frames`、`width`、`quality`、`out`、`attach` | 帧文件路径 + 元数据，并把帧附加到当前会话 |
 
 - `conversation` 支持 conversation id、`https://chatgpt.com/c/<id>` 或 `last`。
 - `file` 会作为文本上下文拼在 prompt 前面。
 - `size` 只是写进 prompt 的尺寸提示（网页生图不保证精确像素）。
-- 每次调用都会新开一个**后台**标签页，结束即关；不用你手动点网页。
+- 每次 gpt 调用都会新开一个**后台**标签页，结束即关；不用你手动点网页。
 - 串行使用：同一时间不要并发跑多个 `gpt_ask`。
+
+### 视频解析：`video_frames`
+
+```text
+path       视频路径（mp4 / mov / webm / mkv … Chrome 能解码的格式）
+every      按间隔截帧，单位秒（与 times 二选一）
+times      指定时间点数组，如 [3, "00:12", "1:02:03"]
+from/to    间隔模式的起止时间（默认 0 → 视频结尾）
+max_frames 最多截几帧，默认 12、上限 16；超出时按时间均匀抽样
+width      帧最大宽度，默认 1280（只缩小不放大）
+quality    JPEG 质量 0.3–1，默认 0.85
+out        输出目录；默认 <root>/video-frames/<视频名>-<时间>/
+attach     是否把帧附加到当前会话，默认 true
+```
+
+- 帧会以图片块的形式进入当前会话，**会话模型必须声明 image 输入**；否则帧只保存到磁盘并在结果里给出原因。
+- 截帧不需要 ffmpeg：本地起一个只绑 `127.0.0.1`、带随机 token 的 HTTP 服务，把视频喂给一个隐藏标签页，由 Chrome 解码后 canvas 抓帧。
+- Chrome 会延迟加载隐藏标签页里的媒体，所以截帧期间会短暂激活那个标签页，元数据就绪后立即切回你原来的标签页。
+- 返回的文本会列出每帧的时间点、路径、尺寸与大小；图片块随后直接给模型看。
 
 ## CLI
 
@@ -155,18 +194,21 @@ gpt doctor
 ```
 .
 ├─ package.json          # dsh-aicd bundle + CLI bin
-├─ cordis.patch.yml      # 根级 gpt-tools（默认关）+ ai漫剧师 preset
+├─ cordis.patch.yml      # 根级 gpt-tools/video-tools（默认关）+ ai漫剧师 preset
 ├─ bin/
 │  ├─ gpt.mjs            # CLI
 │  └─ gpt.cmd            # Windows 启动器
 ├─ src/
-│  ├─ gpt-tools.mjs      # DSH 工具注册
+│  ├─ gpt-tools.mjs      # ChatGPT 工具注册
+│  ├─ video-tools.mjs    # 视频工具注册
 │  ├─ bridge.mjs         # DSH Browser Control HTTP 客户端
 │  ├─ chatgpt.mjs        # 网页驱动：ask / 续聊 / 生图
+│  ├─ video-frames.mjs   # 回环 HTTP + Chrome 解码 + canvas 截帧
 │  └─ store.mjs          # 路径、Markdown、last.json
 ├─ skills/               # 本地私有技能，公开仓库不包含
 ├─ conversations/        # 运行产物（gitignore）
 ├─ images/               # 运行产物（gitignore）
+├─ video-frames/         # 截帧产物（gitignore）
 └─ .state/               # 运行状态（gitignore）
 ```
 
@@ -184,10 +226,15 @@ gpt doctor
 - 面板窗口的「锁定」、只读/禁脚本策略由浏览器扩展控制；被拦住时命令会带可读错误返回。
 - 网页改版可能让选择器失效；`src/chatgpt.mjs` 里的 composer / send 选择器集中在一处，便于修。
 - 会话记录接口不可用时 `gpt_ask` 会失败，而不是退化成抓 innerText。
+- 视频解码由 Chrome 负责：H.264/VP9 等常见编码可用，HEVC/AV1 等是否可用取决于该 Chrome 构建；解不了会报 `Chrome 无法解码该视频`。
+- `video_frames` 单次最多 16 帧（`max_frames` 默认 12），超过上限会按时间均匀抽样，间隔语义会被改变。
+- `width` 只缩小不放大；源视频 320×176 时设 1280 仍是 320×176。
+- 截帧时那个隐藏标签页会短暂激活（Chrome 延迟加载后台媒体），元数据就绪后自动切回原标签页；长视频或大量帧会更慢。
+- 一次工具结果里附加太多图片会受 DSH attachment 的服务端限制（默认每消息 20 张）；建议单次 ≤12 帧，分批分析。
 
 ## 隐私
 
-本仓库**不包含** `skills/`、`.state/`、`conversations/`、`images/` 等私有工作材料；`.gitignore` 已把它们排除。ai漫剧师预设只提供入口与插件组合，具体技能（`aigc-comic-pipeline`、`aigc-asset-generation`、`aigc-vault-rules` 等）由使用者本地提供。
+本仓库**不包含** `skills/`、`.state/`、`conversations/`、`images/`、`video-frames/` 等私有工作材料；`.gitignore` 已把它们排除。ai漫剧师预设只提供入口与插件组合，具体技能（`aigc-comic-pipeline`、`aigc-asset-generation`、`aigc-vault-rules` 等）由使用者本地提供。
 
 ## 致谢
 
