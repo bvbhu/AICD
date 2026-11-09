@@ -3,10 +3,10 @@
 一个 DSH bundle，三件事：
 
 1. **gpt tool** — 把 ChatGPT 网页版变成模型可调用的工具：`gpt_ask`（对话→Markdown）、`gpt_image`（生图→PNG）、`gpt_last`（最近会话 id），另带一个 `gpt` CLI。
-2. **视频解析** — `video_probe`（时长/分辨率）、`video_frames`（按间隔或指定时间点截帧），并把帧作为图片附加到当前会话，让图像模型直接分析视频。
+2. **视频解析** — `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（自动找镜头切点）、`video_sheet`（拼总览图）；帧和总览图会作为图片附加到当前会话，让图像模型直接分析。
 3. **ai漫剧师预设** — 从旧 AIGC 漫剧项目的 git 记录找回的 agent preset（`aigc-comic-pipeline`，全流程模式）。该预设**自带** gpt tool 和视频工具；其他预设默认没有，需要手动启用。
 
-gpt 与视频工具都不使用 `chrome-use` / `chatgpt-use` / `image-use`，也不依赖 Python 或 ffmpeg：它们通过 **DSH Browser Control 桥接（@angelky7/dsh-browser-control，127.0.0.1:9777）** 驱动你已登录的真实 Chrome，用的就是 DSH `browser_*` 工具那一个 **DSH-Browser-Control Chrome 扩展**。gpt 走网页会话；视频走一个本地回环 HTTP + 隐藏标签页，由 Chrome 解码后 canvas 截帧。没有 API key，没有 headless，不烧 API 额度。
+gpt 工具通过 **DSH Browser Control 桥接（@angelky7/dsh-browser-control，127.0.0.1:9777）** 驱动你已登录的真实 Chrome，用的是 DSH `browser_*` 工具那一个 **DSH-Browser-Control Chrome 扩展**；没有 API key、没有 headless、不烧 API 额度。视频工具**优先走 ffmpeg**（路径可配置，Format Factory 自带的 ffmpeg 也能直接用），没有 ffmpeg 时才回退到 Chrome 解码。gpt 部分不需要 Python；视频的量化比对（Pillow）属于可选的下游分析。
 
 > 仅供个人使用。把 ChatGPT 网页版当自动化接口批量调用不符合 OpenAI 的服务条款取向，请自行控制频率与风险。
 
@@ -17,7 +17,7 @@ gpt 与视频工具都不使用 `chrome-use` / `chatgpt-use` / `image-use`，也
 | 部分 | 内容 |
 | --- | --- |
 | gpt 工具插件 | `src/gpt-tools.mjs` → 注册 `gpt_ask` / `gpt_image` / `gpt_last`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
-| 视频工具插件 | `src/video-tools.mjs` → 注册 `video_probe` / `video_frames`；`src/video-frames.mjs` 负责回环服务、Chrome 解码与 canvas 截帧 |
+| 视频工具插件 | `src/video-tools.mjs` → 注册 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；`src/ffmpeg.mjs` 是 ffmpeg 后端（探测/单遍截帧/切点/拼图），`src/video-frames.mjs` 是无 ffmpeg 时的 Chrome 回环截帧 |
 | 预设 | `cordis.patch.yml` 插入 `@deepseek-ai/dsh-agent-preset` 行：`id: aigc-comic-pipeline`，`name: ai漫剧师`，`order: 20` |
 | 预设里的工具 | 预设 `plugins` 列表里有 `id: gpt-tools, name: 'dsh-aicd'` 和 `id: video-tools, name: 'dsh-aicd/video'` |
 | 其他预设 | 根级 `gpt-tools` / `video-tools` 行默认 `disabled: true`；需要时手动启用（见下文） |
@@ -36,12 +36,14 @@ DSH-Browser-Control Chrome 扩展（v1.7.2）
         ▼
 你已登录的 chatgpt.com 标签页（gpt 每次新开一个后台标签，做完即关）
 
-video_probe / video_frames
-        │  本地回环 HTTP（随机端口 + 随机 token）把视频喂给隐藏标签页
-        ▼
-Chrome <video> 解码 → canvas.drawImage → JPEG
+video_probe / video_frames / video_scenes / video_sheet
+        │  ffmpeg（优先；ffmpegPath 可配置）
+        │  ffmpeg -i 探测 / fps+select 单遍截帧 / scene+showinfo 找切点 / tile 拼图
         ▼
 DSH attachments 服务 → 作为图片块附加到当前会话，交给图像模型分析
+
+        （没有 ffmpeg 时的回退）
+        本地回环 HTTP（随机端口 + 随机 token）→ Chrome <video> 解码 → canvas JPEG
 ```
 
 回复不是从 DOM 抄的：它读取 `/backend-api/conversation/<id>` 的 `content.parts`，所以 Markdown 表格、代码块、加粗都保真。
@@ -53,10 +55,22 @@ DSH attachments 服务 → 作为图片块附加到当前会话，交给图像�
 | 组件 | 要求 |
 | --- | --- |
 | DSH | 0.2.2 系列（本仓库在 `0.2.2-rc.1` 上实测） |
-| Chrome | 116+，且已登录 <https://chatgpt.com> |
+| ffmpeg | **推荐**。视频工具默认找 `ffmpegPath` 配置 → `DSH_FFMPEG_PATH` → PATH → 常见安装目录（含 Format Factory）。没有 ffmpeg 时只有 `video_probe`/`video_frames` 能回退到 Chrome |
+| Chrome | 116+，且已登录 <https://chatgpt.com>（gpt 工具与视频回退都需要） |
 | Chrome 扩展 | **DSH-Browser-Control**（与 `@angelky7/dsh-browser-control` 配套的那个，v1.7.2 实测） |
 | DSH 插件 | `@angelky7/dsh-browser-control` 已安装并在设置中启用（默认端口 `9777`、token `dsh-local`） |
 | Node | ≥ 20（DSH 自带的 Node 即可） |
+
+ffmpeg 可以这样指定（Format Factory 自带的就是一个完整构建，实测 7.1）：
+
+```yaml
+- id: video-tools
+  name: 'dsh-aicd/video'
+  config:
+    ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
+```
+
+不配置也可以：插件会依次尝试 `DSH_FFMPEG_PATH`、PATH、`C:\ffmpeg\bin`、`D:\ffmpeg\bin`、`C:\Program Files\FormatFactory`、`D:\Program Files\FormatFactory`、winget/chocolatey 的常见位置。`ffprobe` 不是必需——没有它时用 `ffmpeg -i` 解析时长/分辨率/帧率。
 
 先确认桥接在线：
 
@@ -84,7 +98,7 @@ dsh plugin --profile desktop add link:<repo>
 安装后：
 
 - 新建会话时预设列表里出现 **「ai漫剧师」**；
-- 在 ai漫剧师会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` 和 `video_probe` / `video_frames`；
+- 在 ai漫剧师会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` 和 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；
 - 其他预设（如内置 standard）里**没有**这些工具。
 
 ---
@@ -125,6 +139,7 @@ bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭
   config:
     bridgeUrl: 'http://127.0.0.1:9777'   # 可选
     token: 'dsh-local'                   # 可选
+    ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'  # 可选；不填则自动找
     root: 'D:/path/to/outputs'           # 可选，默认 ~/.dsh/gpt-web
 ```
 
@@ -139,8 +154,10 @@ bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭
 | `gpt_ask` | `prompt`(必填)、`file[]`、`conversation`、`out`、`timeout` | `conversation_id`、`text`、Markdown `path`、`url`、`title` |
 | `gpt_image` | `prompt`(必填)、`ref[]`、`out`、`size`、`timeout` | 图片绝对 `path`、`conversation_id`、宽高 |
 | `gpt_last` | — | 最近会话的 `conversation_id` / `url` / `path` |
-| `video_probe` | `path`(必填) | `duration`、视频 `width` / `height` |
-| `video_frames` | `path`(必填)、`every` 或 `times`、`from`、`to`、`max_frames`、`width`、`quality`、`out`、`attach` | 帧文件路径 + 元数据，并把帧附加到当前会话 |
+| `video_probe` | `path`(必填) | `duration`、`width` / `height`、`fps`、`codec`、`backend` |
+| `video_frames` | `path`(必填)、`every` / `times` / `frames` 三选一、`from`、`to`、`max_frames`、`width`、`quality`、`out`、`attach`、`backend` | 帧文件路径 + 元数据，并把帧附加到当前会话 |
+| `video_scenes` | `path`(必填)、`threshold`、`max_scenes`、`from`、`to` | 镜头切点时间列表（ffmpeg） |
+| `video_sheet` | `path`(必填)、`fps`、`cover`、`columns`、`rows`、`width`、`out`、`attach` | 一张总览图，并附加到当前会话 |
 
 - `conversation` 支持 conversation id、`https://chatgpt.com/c/<id>` 或 `last`。
 - `file` 会作为文本上下文拼在 prompt 前面。
@@ -148,24 +165,67 @@ bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭
 - 每次 gpt 调用都会新开一个**后台**标签页，结束即关；不用你手动点网页。
 - 串行使用：同一时间不要并发跑多个 `gpt_ask`。
 
-### 视频解析：`video_frames`
+### 视频解析：ffmpeg 优先，Chrome 回退
+
+默认后端是 ffmpeg（`backend: auto`）。只要 `ffmpegPath`、`DSH_FFMPEG_PATH` 或 PATH/常见目录里找到 ffmpeg 就用 ffmpeg；完全没有时才让 `video_probe` / `video_frames` 回退到 Chrome 回环解码。
+
+#### `video_frames`
 
 ```text
-path       视频路径（mp4 / mov / webm / mkv … Chrome 能解码的格式）
-every      按间隔截帧，单位秒（与 times 二选一）
-times      指定时间点数组（字符串），如 ["3", "00:12", "1:02:03"]
+path       视频路径
+every      按间隔截帧，单位秒（与 times / frames 三选一）
+times      指定时间点数组，如 ["3", "00:12", "1:02:03"]
+frames     指定帧号数组，如 [96, 120]（仅 ffmpeg；适合和切点对齐）
 from/to    间隔模式的起止时间（默认 0 → 视频结尾）
 max_frames 最多截几帧，默认 12、上限 16；超出时按时间均匀抽样
 width      帧最大宽度，默认 1280（只缩小不放大）
-quality    JPEG 质量 0.3–1，默认 0.85
+quality    JPEG 质量（Chrome 回退用；ffmpeg 统一 q:v 2）
 out        输出目录；默认 <root>/video-frames/<视频名>-<时间>/
 attach     是否把帧附加到当前会话，默认 true
+backend    auto（默认）| ffmpeg | chrome
 ```
 
-- 帧会以图片块的形式进入当前会话，**会话模型必须声明 image 输入**；否则帧只保存到磁盘并在结果里给出原因。
-- 截帧不需要 ffmpeg：本地起一个只绑 `127.0.0.1`、带随机 token 的 HTTP 服务，把视频喂给一个标签页，由 Chrome 解码后 canvas 抓帧。
-- Chrome 会冻结后台标签页（`seeked`/rAF 会卡死），所以截帧期间该标签页保持激活，结束后切回你原来的标签页；Chrome 窗口本身最好保持可见，否则系统降频仍可能让 seek 变慢或超时。
-- 返回的文本会列出每帧的时间点、路径、尺寸与大小；图片块随后直接给模型看。
+#### `video_scenes`
+
+```text
+path       视频路径
+threshold  场景变化阈值，默认 0.25；画面变化大用 0.2，变化小用 0.3–0.4
+max_scenes 最多返回多少个切点，默认 30
+from/to    检测区间（可选）
+```
+
+实现是单遍 `select='gt(scene,0.25)',showinfo`，从 stderr 的 `pts_time` 取切点。拿到时间后再用 `video_frames times=[...]` 精确取证。
+
+#### `video_sheet`
+
+```text
+path       视频路径
+fps        采样密度；不填时按 cover 自动覆盖整段
+cover      默认 true：fps = (columns*rows)/duration，让总览图均匀覆盖整段视频
+columns    列数，默认 4
+rows       行数，默认 3
+width      每格宽度，默认 496
+out        输出路径；默认 <root>/video-frames/<视频名>-sheet-<时间>.jpg
+```
+
+一张总览图只占一个图片块，比逐帧附加省 token，适合先看整体再定点抽帧。
+
+#### 实测（10s / 1920×1080 / 30fps，输出 1280×720 JPEG）
+
+| 操作 | ffmpeg | Chrome 回退 |
+| --- | --- | --- |
+| `video_probe` | ~80 ms | ~145 ms |
+| 8 帧（每帧间隔） | **249 ms** | 1454 ms |
+| 3 个指定时间点 | 564 ms | 逐帧 seek，需前台 |
+| 按帧号 `[0,30,60]` | 260 ms | 不支持 |
+| 4×3 总览图 | 206 ms | 不支持 |
+| 后台/无人值守 | 可以 | 必须保持标签页激活、窗口可见 |
+
+- ffmpeg 的间隔模式是**单遍 `fps` 滤镜**；超过 `max_frames` 时自动把采样间隔拉大、均匀覆盖整个区间。
+- 时间点模式对每个时间点跑一次 `-ss` 精确 seek；帧号模式用 `select='eq(n,N)'`。
+- 截帧不需要 Python；`ffprobe` 也不是必需。
+- 帧/总览图会以图片块进入当前会话，**会话模型必须声明 image 输入**；否则只保存到磁盘并在结果里说明原因。
+- 没有 ffmpeg 时的 Chrome 回退：本地回环 HTTP + 标签页解码，Chrome 会冻结后台标签页，所以截帧期间标签页保持激活；这条路径只适合临时应急。
 
 ## CLI
 
@@ -201,9 +261,10 @@ gpt doctor
 ├─ src/
 │  ├─ gpt-tools.mjs      # ChatGPT 工具注册
 │  ├─ video-tools.mjs    # 视频工具注册
+│  ├─ ffmpeg.mjs         # ffmpeg 后端：探测/截帧/切点/拼图
 │  ├─ bridge.mjs         # DSH Browser Control HTTP 客户端
 │  ├─ chatgpt.mjs        # 网页驱动：ask / 续聊 / 生图
-│  ├─ video-frames.mjs   # 回环 HTTP + Chrome 解码 + canvas 截帧
+│  ├─ video-frames.mjs   # 无 ffmpeg 时的回环 HTTP + Chrome 解码 + canvas 截帧
 │  └─ store.mjs          # 路径、Markdown、last.json
 ├─ skills/               # 本地私有技能，公开仓库不包含
 ├─ conversations/        # 运行产物（gitignore）
@@ -226,11 +287,13 @@ gpt doctor
 - 面板窗口的「锁定」、只读/禁脚本策略由浏览器扩展控制；被拦住时命令会带可读错误返回。
 - 网页改版可能让选择器失效；`src/chatgpt.mjs` 里的 composer / send 选择器集中在一处，便于修。
 - 会话记录接口不可用时 `gpt_ask` 会失败，而不是退化成抓 innerText。
-- 视频解码由 Chrome 负责：H.264/VP9 等常见编码可用，HEVC/AV1 等是否可用取决于该 Chrome 构建；解不了会报 `Chrome 无法解码该视频`。
-- `video_frames` 单次最多 16 帧（`max_frames` 默认 12），超过上限会按时间均匀抽样，间隔语义会被改变。
-- `width` 只缩小不放大；源视频 320×176 时设 1280 仍是 320×176。
-- 截帧时那个隐藏标签页会短暂激活（Chrome 延迟加载后台媒体），元数据就绪后自动切回原标签页；长视频或大量帧会更慢。
-- 一次工具结果里附加太多图片会受 DSH attachment 的服务端限制（默认每消息 20 张）；建议单次 ≤12 帧，分批分析。
+- 视频主后端是 ffmpeg：`ffmpegPath` 指向不存在的文件会明确报错；Format Factory 之类的共享构建需要同目录 DLL 一起保留（spawn 时会把工作目录设为 ffmpeg 所在目录）。
+- `video_scenes` 只检测高于 `threshold` 的硬切；渐变/溶解转场可能漏检，阈值要按素材微调。
+- `video_sheet` 显式给 `fps` 时只取前 `columns*rows` 个采样帧（适合短片）；默认 `cover: true` 会把采样密度算成 `(columns*rows)/duration`，覆盖整段。
+- `video_frames` 单次最多 16 帧（`max_frames` 默认 12），超过上限会按时间均匀抽样；间隔语义会被改变。
+- `width` 只缩小不放大；源视频 320×176 时设 1280 仍是 320×176。ffmpeg 后端的 `quality` 参数不生效（统一 `q:v 2`）。
+- 没有 ffmpeg 时 `video_probe`/`video_frames` 会回退 Chrome：Chrome 会冻结后台标签页，截帧期间标签页保持激活，且最好让 Chrome 窗口可见，否则 seek 可能变慢或超时；`video_scenes`/`video_sheet` 在回退模式下不可用。
+- 一次工具结果里附加太多图片会受 DSH attachment 的服务端限制（默认每消息 20 张）；建议单次 ≤12 帧，或先用 `video_sheet` 看整体。
 
 ## 隐私
 

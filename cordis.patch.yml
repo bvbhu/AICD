@@ -9,6 +9,9 @@
     - id: video-tools
       name: 'dsh-aicd/video'
       disabled: true
+      config:
+        backend: auto
+        # ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
 
 # The ai漫剧师 agent preset (recovered from the old AIGC-Comic-drama project)
 # includes gpt-tools, so a session on that preset has the gpt tools out of the box.
@@ -151,6 +154,8 @@
             config:
               bridgeUrl: 'http://127.0.0.1:9777'
               token: 'dsh-local'
+              backend: auto
+              # ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           - id: tool-plugin-manager
