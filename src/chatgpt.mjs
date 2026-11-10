@@ -124,14 +124,16 @@ async function clickSend(bridge, tabId) {
     tabId,
     `(() => {
       const buttons = [...document.querySelectorAll('button')];
-      const send = buttons.find((x) => {
+      const send = buttons.filter((x) => {
         const label = (x.getAttribute('aria-label') || '').trim();
         return label === '发送' || label === 'Send' || label === 'Send message'
           || x.getAttribute('data-testid') === 'send-button' || x.id === 'composer-submit-button';
       });
-      if (!send) return 'no-send';
-      if (send.disabled) return 'disabled';
-      send.click();
+      if (send.length === 0) return 'no-send';
+      const clickable = send.find((x) => !x.disabled && x.getBoundingClientRect().width > 0)
+        || send.find((x) => !x.disabled);
+      if (!clickable) return 'disabled';
+      clickable.click();
       return 'sent';
     })()`,
   )
