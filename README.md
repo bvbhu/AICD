@@ -2,7 +2,7 @@
 
 一个 DSH bundle，三件事：
 
-1. **gpt tool** — 把 ChatGPT 网页版变成模型可调用的工具：`gpt_ask`（对话→Markdown）、`gpt_image`（生图→PNG）、`gpt_last`（最近会话 id），另带一个 `gpt` CLI。
+1. **gpt tool** — 把 ChatGPT 网页版变成模型可调用的工具：`gpt_ask`（对话→Markdown）、`gpt_image`（生图→PNG）、`gpt_last`（最近会话 id），另带一个 `gpt` CLI。`gpt_ask` / `gpt_image` 支持 `background: true`：生成放到 DSH 后台 job，立即返回，不阻塞对话。
 2. **视频解析** — `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（自动找镜头切点）、`video_sheet`（拼总览图）；帧和总览图会作为图片附加到当前会话，让图像模型直接分析。
 3. **ai漫剧师预设** — 从旧 AIGC 漫剧项目的 git 记录找回的 agent preset（`aigc-comic-pipeline`，全流程模式）。该预设**自带** gpt tool 和视频工具；其他预设默认没有，需要手动启用。
 
@@ -151,8 +151,8 @@ bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
-| `gpt_ask` | `prompt`(必填)、`file[]`、`conversation`、`out`、`timeout` | `conversation_id`、`text`、Markdown `path`、`url`、`title` |
-| `gpt_image` | `prompt`(必填)、`ref[]`、`out`、`size`、`timeout` | 图片绝对 `path`、`conversation_id`、宽高 |
+| `gpt_ask` | `prompt`(必填)、`file[]`、`conversation`、`out`、`timeout`、`background` | `conversation_id`、`text`、Markdown `path`、`url`、`title`（后台模式返回 `job_id`） |
+| `gpt_image` | `prompt`(必填)、`ref[]`、`out`、`size`、`timeout`、`background` | 图片绝对 `path`、`conversation_id`、宽高（后台模式返回 `job_id`） |
 | `gpt_last` | — | 最近会话的 `conversation_id` / `url` / `path` |
 | `video_probe` | `path`(必填) | `duration`、`width` / `height`、`fps`、`codec`、`backend` |
 | `video_frames` | `path`(必填)、`every` / `times` / `frames` 三选一、`from`、`to`、`max_frames`、`width`、`quality`、`out`、`attach`、`backend` | 帧文件路径 + 元数据，并把帧附加到当前会话 |
@@ -164,6 +164,28 @@ bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭
 - `size` 只是写进 prompt 的尺寸提示（网页生图不保证精确像素）。
 - 每次 gpt 调用都会新开一个**后台**标签页，结束即关；不用你手动点网页。
 - 串行使用：同一时间不要并发跑多个 `gpt_ask`。
+
+### 异步调用：`background: true`
+
+`gpt_ask` / `gpt_image` 都支持后台执行。生成期间不再占住当前对话轮次：
+
+```text
+gpt_ask  prompt="审查这版剧本" background=true
+→ { status: "running", job_id: "gpt-1a2b3c4d5e6f7890" }
+
+（继续聊别的事）
+
+job_output job_id="gpt-1a2b3c4d5e6f7890"
+→ [gpt] 完成
+  {"status":"completed","conversation_id":"...","path":"...","url":"...","title":"...","text":"...","text_truncated":false}
+```
+
+- 工具立即返回 `job_id`，真正的生成在 DSH 后台任务里跑；完成后 `@deepseek-ai/dsh-tool-jobs` 会**在会话内发完成通知**，不用轮询。
+- 结果用 `job_output` 读；不要了就 `job_kill`。取消会关掉对应的 ChatGPT 标签页。
+- 后台任务依赖 `ctx.jobs` 与 `dsh-tool-jobs` 控制器：ai漫剧师预设已内置 `tool-jobs`；如果某个预设没有它，`background: true` 会明确报“没有可用的后台任务服务”。
+- 任务只存在于 DSH 进程内：DSH 重启会丢失运行中的任务（已完成写入的 Markdown/图片仍在磁盘）。
+- `prompt`/`file`/`conversation` 的校验在启动 job 前完成，参数错误会直接同步报错，不会留下空任务。
+- 图片后台结果里带绝对 `path`；Markdown 后台结果里带 `path` 和最多 3KB 的正文预览（全文看文件）。
 
 ### 视频解析：ffmpeg 优先，Chrome 回退
 
@@ -264,6 +286,7 @@ gpt doctor
 │  ├─ ffmpeg.mjs         # ffmpeg 后端：探测/截帧/切点/拼图
 │  ├─ bridge.mjs         # DSH Browser Control HTTP 客户端
 │  ├─ chatgpt.mjs        # 网页驱动：ask / 续聊 / 生图
+│  ├─ job-runner.mjs     # background=true 的 DSH 后台 job 包装
 │  ├─ video-frames.mjs   # 无 ffmpeg 时的回环 HTTP + Chrome 解码 + canvas 截帧
 │  └─ store.mjs          # 路径、Markdown、last.json
 ├─ skills/               # 本地私有技能，公开仓库不包含

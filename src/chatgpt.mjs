@@ -45,6 +45,10 @@ export function normalizeConversationId(value) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+function throwIfAborted(signal) {
+  if (signal?.aborted) throw new WebError('已取消', 'cancelled')
+}
+
 const progress = (onProgress, message) => {
   try {
     onProgress?.(message)
@@ -53,10 +57,11 @@ const progress = (onProgress, message) => {
   }
 }
 
-async function ensureLoggedInComposer(bridge, tabId, timeoutMs = 60000) {
+async function ensureLoggedInComposer(bridge, tabId, timeoutMs = 60000, signal) {
   const deadline = Date.now() + timeoutMs
   let last = null
   while (Date.now() < deadline) {
+    throwIfAborted(signal)
     try {
       last = await bridge.evalIn(
         tabId,
@@ -214,9 +219,10 @@ async function readReplyText(bridge, tabId, id) {
   return raw.text || ''
 }
 
-async function waitForConversationId(bridge, tabId, timeoutMs = 90000) {
+async function waitForConversationId(bridge, tabId, timeoutMs = 90000, signal) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
+    throwIfAborted(signal)
     const current = await currentConversation(bridge, tabId).catch(() => null)
     if (current?.id) return current.id
     await sleep(1000)
@@ -225,7 +231,8 @@ async function waitForConversationId(bridge, tabId, timeoutMs = 90000) {
 }
 
 /** Send one prompt in a fresh or existing conversation. */
-export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 300, onProgress }) {
+export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 300, onProgress, signal }) {
+  throwIfAborted(signal)
   const timeoutMs = Math.max(30, Number(timeoutSec) || 300) * 1000
   const existingId = conversation ? normalizeConversationId(conversation) : ''
   const tabId = await bridge.openTab(existingId ? CONV_URL(existingId) : CHAT_URL, {
@@ -234,8 +241,13 @@ export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 30
     timeoutMs: 30000,
   })
   let closed = false
+  const onAbort = () => {
+    bridge.closeTab(tabId).catch(() => {})
+  }
+  signal?.addEventListener?.('abort', onAbort, { once: true })
   try {
-    await ensureLoggedInComposer(bridge, tabId, 60000)
+    await ensureLoggedInComposer(bridge, tabId, 60000, signal)
+    throwIfAborted(signal)
     let before = null
     if (existingId) {
       before = await readState(bridge, tabId, existingId)
@@ -247,13 +259,14 @@ export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 30
     progress(onProgress, `发送到 ChatGPT 网页（timeout=${Math.round(timeoutMs / 1000)}s）…`)
     await clickSend(bridge, tabId)
 
-    const id = existingId || (await waitForConversationId(bridge, tabId, 90000))
+    const id = existingId || (await waitForConversationId(bridge, tabId, 90000, signal))
     if (!id) throw new WebError('发送后没有拿到 conversation id：页面没有进入会话页', 'no_conversation_id')
     if (!existingId) progress(onProgress, `新会话 ${id}`)
 
     const deadline = Date.now() + timeoutMs
     await sleep(1500)
     while (Date.now() < deadline) {
+      throwIfAborted(signal)
       const state = await readState(bridge, tabId, id).catch(() => null)
       if (state) {
         const last = state.last
@@ -276,6 +289,7 @@ export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 30
       'timeout',
     )
   } finally {
+    signal?.removeEventListener?.('abort', onAbort)
     if (!closed) {
       closed = true
       await bridge.closeTab(tabId).catch(() => {})
@@ -284,11 +298,17 @@ export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 30
 }
 
 /** Create a new conversation and generate one image; returns the saved page image URLs. */
-export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 300, onProgress, out }) {
+export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 300, onProgress, out, signal }) {
+  throwIfAborted(signal)
   const timeoutMs = Math.max(30, Number(timeoutSec) || 300) * 1000
   const tabId = await bridge.openTab(CHAT_URL, { active: false, waitUntil: 'domcontentloaded', timeoutMs: 30000 })
+  const onAbort = () => {
+    bridge.closeTab(tabId).catch(() => {})
+  }
+  signal?.addEventListener?.('abort', onAbort, { once: true })
   try {
-    await ensureLoggedInComposer(bridge, tabId, 60000)
+    await ensureLoggedInComposer(bridge, tabId, 60000, signal)
+    throwIfAborted(signal)
     // Clear FIRST: select-all + delete in the composer would also wipe an
     // attachment chip, so attachments are added only after the box is empty.
     await clearComposer(bridge, tabId)
@@ -300,7 +320,7 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
     progress(onProgress, `发送生图请求（timeout=${Math.round(timeoutMs / 1000)}s）…`)
     await clickSend(bridge, tabId)
 
-    const id = await waitForConversationId(bridge, tabId, 90000)
+    const id = await waitForConversationId(bridge, tabId, 90000, signal)
     if (!id) throw new WebError('发送后没有拿到 conversation id：页面没有进入会话页', 'no_conversation_id')
     progress(onProgress, `新会话 ${id}`)
 
@@ -308,6 +328,7 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
     let textSeenAt = 0
     await sleep(2000)
     while (Date.now() < deadline) {
+      throwIfAborted(signal)
       const state = await readState(bridge, tabId, id).catch(() => null)
       if (state) {
         if (state.images.length > 0) {
@@ -345,6 +366,7 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
       'timeout',
     )
   } finally {
+    signal?.removeEventListener?.('abort', onAbort)
     await bridge.closeTab(tabId).catch(() => {})
   }
 }

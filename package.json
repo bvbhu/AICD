@@ -10,6 +10,7 @@
     "./bridge": "./src/bridge.mjs",
     "./chatgpt": "./src/chatgpt.mjs",
     "./ffmpeg": "./src/ffmpeg.mjs",
+    "./job-runner": "./src/job-runner.mjs",
     "./video-frames": "./src/video-frames.mjs",
     "./store": "./src/store.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
