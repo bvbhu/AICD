@@ -1,7 +1,7 @@
 {
-  "name": "dsh-aicd",
+  "name": "dsh-shotflow",
   "version": "0.2.0",
-  "description": "DSH composite plugin: ChatGPT-web gpt tools + video frame analysis + the ai漫剧师 agent preset",
+  "description": "DSH plugin bundle for AI video generation workflows: ChatGPT web tools + ffmpeg video analysis",
   "type": "module",
   "main": "./src/gpt-tools.mjs",
   "exports": {
@@ -35,6 +35,9 @@
     "deepseek-harness",
     "chatgpt",
     "browser-control",
+    "ffmpeg",
+    "video",
+    "ai-video",
     "agent-preset"
   ],
   "dsh": {

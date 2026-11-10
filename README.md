@@ -1,12 +1,12 @@
-# AICD — DSH 复合插件：GPT 网页工具 + 视频解析 + ai漫剧师预设
+# ShotFlow — DSH 插件：AI 视频生成工作流工具
 
-一个 DSH bundle，三件事：
+一个 DSH bundle，提供 AI 视频生成工作流里最常用的两类工具，以及一个**只装工具**的预设：
 
-1. **gpt tool** — 把 ChatGPT 网页版变成模型可调用的工具：`gpt_ask`（对话→Markdown）、`gpt_image`（生图→PNG）、`gpt_last`（最近会话 id），另带一个 `gpt` CLI。`gpt_ask` / `gpt_image` 支持 `background: true`：生成放到 DSH 后台 job，立即返回，不阻塞对话。
-2. **视频解析** — `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（自动找镜头切点）、`video_sheet`（拼总览图）；帧和总览图会作为图片附加到当前会话，让图像模型直接分析。
-3. **ai漫剧师预设** — 从旧 AIGC 漫剧项目的 git 记录找回的 agent preset（`aigc-comic-pipeline`，全流程模式）。该预设**自带** gpt tool 和视频工具；其他预设默认没有，需要手动启用。
+1. **ChatGPT 网页工具** — `gpt_ask`（对话→Markdown）、`gpt_image`（生图→PNG）、`gpt_last`（最近会话 id），另带 `gpt` CLI；`gpt_ask` / `gpt_image` 支持后台执行，生成期间不阻塞对话。
+2. **视频解析工具** — `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（镜头切点）、`video_sheet`（总览图）。默认走 ffmpeg，没有 ffmpeg 时探测/截帧回退 Chrome；帧和总览图会作为图片附加到当前会话。
+3. **「AI 视频工作流」预设** — 只组合上面这些工具与基础文件/命令/任务能力，不带自定义 persona、不绑定任何具体视频生成平台、不依赖任何技能文件，避免给 agent 增加无关上下文。
 
-gpt 工具通过 **DSH Browser Control 桥接（@angelky7/dsh-browser-control，127.0.0.1:9777）** 驱动你已登录的真实 Chrome，用的是 DSH `browser_*` 工具那一个 **DSH-Browser-Control Chrome 扩展**；没有 API key、没有 headless、不烧 API 额度。视频工具**优先走 ffmpeg**（路径可配置，Format Factory 自带的 ffmpeg 也能直接用），没有 ffmpeg 时才回退到 Chrome 解码。gpt 部分不需要 Python；视频的量化比对（Pillow）属于可选的下游分析。
+不绑定固定平台：生成环节用你自己的工具链；ShotFlow 只负责网页对话/生图与本地视频解析。
 
 > 仅供个人使用。把 ChatGPT 网页版当自动化接口批量调用不符合 OpenAI 的服务条款取向，请自行控制频率与风险。
 
@@ -16,11 +16,10 @@ gpt 工具通过 **DSH Browser Control 桥接（@angelky7/dsh-browser-control，
 
 | 部分 | 内容 |
 | --- | --- |
-| gpt 工具插件 | `src/gpt-tools.mjs` → 注册 `gpt_ask` / `gpt_image` / `gpt_last`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
-| 视频工具插件 | `src/video-tools.mjs` → 注册 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；`src/ffmpeg.mjs` 是 ffmpeg 后端（探测/单遍截帧/切点/拼图），`src/video-frames.mjs` 是无 ffmpeg 时的 Chrome 回环截帧 |
-| 预设 | `cordis.patch.yml` 插入 `@deepseek-ai/dsh-agent-preset` 行：`id: aigc-comic-pipeline`，`name: ai漫剧师`，`order: 20` |
-| 预设里的工具 | 预设 `plugins` 列表里有 `id: gpt-tools, name: 'dsh-aicd'` 和 `id: video-tools, name: 'dsh-aicd/video'` |
-| 其他预设 | 根级 `gpt-tools` / `video-tools` 行默认 `disabled: true`；需要时手动启用（见下文） |
+| gpt 工具 | `src/gpt-tools.mjs` → `gpt_ask` / `gpt_image` / `gpt_last`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
+| 后台任务 | `src/job-runner.mjs` → 把 `background: true` 的生成挂到 DSH `ctx.jobs`，完成后用 `job_output` 取结果 |
+| 视频工具 | `src/video-tools.mjs` → `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；`src/ffmpeg.mjs` 是主后端，`src/video-frames.mjs` 是无 ffmpeg 时的 Chrome 回退 |
+| 预设 | `cordis.patch.yml` 插入 `@deepseek-ai/dsh-agent-preset`：`id: ai-video-workflow`，`name: AI 视频工作流` |
 
 ## 运行时序
 
@@ -48,48 +47,33 @@ DSH attachments 服务 → 作为图片块附加到当前会话，交给图像�
 
 回复不是从 DOM 抄的：它读取 `/backend-api/conversation/<id>` 的 `content.parts`，所以 Markdown 表格、代码块、加粗都保真。
 
----
-
 ## 前置条件
 
 | 组件 | 要求 |
 | --- | --- |
 | DSH | 0.2.2 系列（本仓库在 `0.2.2-rc.1` 上实测） |
-| ffmpeg | **推荐**。视频工具默认找 `ffmpegPath` 配置 → `DSH_FFMPEG_PATH` → PATH → 常见安装目录（含 Format Factory）。没有 ffmpeg 时只有 `video_probe`/`video_frames` 能回退到 Chrome |
+| ffmpeg | **推荐**。视频工具默认找 `ffmpegPath` 配置 → `DSH_FFMPEG_PATH` → PATH → 常见安装目录；没有 ffmpeg 时只有 `video_probe`/`video_frames` 能回退 Chrome |
 | Chrome | 116+，且已登录 <https://chatgpt.com>（gpt 工具与视频回退都需要） |
 | Chrome 扩展 | **DSH-Browser-Control**（与 `@angelky7/dsh-browser-control` 配套的那个，v1.7.2 实测） |
 | DSH 插件 | `@angelky7/dsh-browser-control` 已安装并在设置中启用（默认端口 `9777`、token `dsh-local`） |
 | Node | ≥ 20（DSH 自带的 Node 即可） |
 
-ffmpeg 可以这样指定（Format Factory 自带的就是一个完整构建，实测 7.1）：
+`ffmpegPath` 可以指向任意 ffmpeg 构建（共享构建需要同目录 DLL 一起保留）：
 
 ```yaml
 - id: video-tools
-  name: 'dsh-aicd/video'
+  name: 'dsh-shotflow/video'
   config:
-    ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
+    ffmpegPath: 'D:/path/to/ffmpeg.exe'
 ```
 
 不配置也可以：插件会依次尝试 `DSH_FFMPEG_PATH`、PATH、`C:\ffmpeg\bin`、`D:\ffmpeg\bin`、`C:\Program Files\FormatFactory`、`D:\Program Files\FormatFactory`、winget/chocolatey 的常见位置。`ffprobe` 不是必需——没有它时用 `ffmpeg -i` 解析时长/分辨率/帧率。
 
-先确认桥接在线：
+## 安装
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:9777/api/status | ConvertTo-Json -Depth 4
-# extensionConnected 应为 true，hello.version 为扩展版本
-```
-
-或：
-
-```powershell
-gpt doctor
-```
-
-## 安装到 DSH
-
-```powershell
-dsh plugin --profile desktop add link:<repo>
-# 然后把 "dsh-aicd" 加入 dsh.profile.bundles（dsh plugin add 通常会自动加）
+dsh plugin --profile <profile> add link:<repo>
+# 然后把 "dsh-shotflow" 加入 dsh.profile.bundles（dsh plugin add 通常会自动加）
 # 重启 DSH 后生效
 ```
 
@@ -97,55 +81,31 @@ dsh plugin --profile desktop add link:<repo>
 
 安装后：
 
-- 新建会话时预设列表里出现 **「ai漫剧师」**；
-- 在 ai漫剧师会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` 和 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；
+- 新建会话时预设列表里出现 **「AI 视频工作流」**；
+- 在该预设会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` 和 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；
 - 其他预设（如内置 standard）里**没有**这些工具。
 
----
+### 其他预设：手动启用工具
 
-## 其他预设：手动启用工具
-
-有两种方式，任选其一。
-
-### 方式 A：启用根级开关（推荐）
-
-bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭。在 DSH 的插件/设置界面启用对应行（等价于把 `cordis.patch.yml` 里该行改成 `disabled: false`）：
-
-```yaml
-- insert:
-    - id: gpt-tools
-      name: 'dsh-aicd'
-      disabled: false
-    - id: video-tools
-      name: 'dsh-aicd/video'
-      disabled: false
-```
-
-此后所有未自带这些工具的预设都能看到它们。使用 ai漫剧师预设时建议保持根级关闭（预设本身已有一份），避免同一工具注册两次。
-
-### 方式 B：写进目标预设的 plugins 列表
-
-在目标预设（通过 profile patch 覆盖该 preset 行、或在自定义 bundle 里新建 preset）的 `plugins` 数组末尾加：
+根级 `gpt-tools` / `video-tools` 默认关闭。需要时在 DSH 的插件/设置界面启用，或写进目标预设的 `plugins` 列表：
 
 ```yaml
 - id: gpt-tools
-  name: 'dsh-aicd'
+  name: 'dsh-shotflow'
   config:
     bridgeUrl: 'http://127.0.0.1:9777'   # 可选
     token: 'dsh-local'                   # 可选
     root: 'D:/path/to/outputs'           # 可选，默认 ~/.dsh/gpt-web
 - id: video-tools
-  name: 'dsh-aicd/video'
+  name: 'dsh-shotflow/video'
   config:
     bridgeUrl: 'http://127.0.0.1:9777'   # 可选
     token: 'dsh-local'                   # 可选
-    ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'  # 可选；不填则自动找
+    ffmpegPath: 'D:/path/to/ffmpeg.exe'  # 可选；不填则自动找
     root: 'D:/path/to/outputs'           # 可选，默认 ~/.dsh/gpt-web
 ```
 
 > DSH 的 preset 覆盖是**整份 `plugins` 列表替换**，不是逐项合并；覆盖内置 preset 时记得把原有条目一起带上。
-
----
 
 ## 工具
 
@@ -170,7 +130,7 @@ bundle 已经插入了根级 `gpt-tools` 和 `video-tools` 两行，默认关闭
 `gpt_ask` / `gpt_image` 都支持后台执行。生成期间不再占住当前对话轮次：
 
 ```text
-gpt_ask  prompt="审查这版剧本" background=true
+gpt_ask  prompt="审查这段视频脚本" background=true
 → { status: "running", job_id: "gpt-1a2b3c4d5e6f7890" }
 
 （继续聊别的事）
@@ -182,7 +142,7 @@ job_output job_id="gpt-1a2b3c4d5e6f7890"
 
 - 工具立即返回 `job_id`，真正的生成在 DSH 后台任务里跑；完成后 `@deepseek-ai/dsh-tool-jobs` 会**在会话内发完成通知**，不用轮询。
 - 结果用 `job_output` 读；不要了就 `job_kill`。取消会关掉对应的 ChatGPT 标签页。
-- 后台任务依赖 `ctx.jobs` 与 `dsh-tool-jobs` 控制器：ai漫剧师预设已内置 `tool-jobs`；如果某个预设没有它，`background: true` 会明确报“没有可用的后台任务服务”。
+- 后台任务依赖 `ctx.jobs` 与 `dsh-tool-jobs` 控制器：本插件的预设已内置 `tool-jobs`；如果某个预设没有它，`background: true` 会明确报“没有可用的后台任务服务”。
 - 任务只存在于 DSH 进程内：DSH 重启会丢失运行中的任务（已完成写入的 Markdown/图片仍在磁盘）。
 - `prompt`/`file`/`conversation` 的校验在启动 job 前完成，参数错误会直接同步报错，不会留下空任务。
 - 图片后台结果里带绝对 `path`；Markdown 后台结果里带 `path` 和最多 3KB 的正文预览（全文看文件）。
@@ -270,13 +230,14 @@ gpt doctor
 - `ask` 默认把提问+回复写成 `<root>/conversations/<会话前8位>-<时间>-<摘要>.md`（frontmatter 带 conversation_id / url / title）；`--plain` 只写回复正文，`--no-save` 不落盘，`--json` 结构化，`--print-id` 只打印 id。
 - `image` 默认写 `<root>/images/<时间>-<摘要>.png`；网页返回的就是 PNG。
 - 输出根目录：环境变量 `DSH_GPT_ROOT`；CLI 默认是仓库根，插件默认是 `~/.dsh/gpt-web`，也可在插件配置里用 `root` 指定。
+- CLI 不提供后台模式；需要不阻塞时用 DSH 工具。
 
 ## 目录
 
 ```
 .
-├─ package.json          # dsh-aicd bundle + CLI bin
-├─ cordis.patch.yml      # 根级 gpt-tools/video-tools（默认关）+ ai漫剧师 preset
+├─ package.json          # dsh-shotflow bundle + CLI bin
+├─ cordis.patch.yml      # 根级 gpt-tools/video-tools（默认关）+ AI 视频工作流 preset
 ├─ bin/
 │  ├─ gpt.mjs            # CLI
 │  └─ gpt.cmd            # Windows 启动器
@@ -289,42 +250,38 @@ gpt doctor
 │  ├─ job-runner.mjs     # background=true 的 DSH 后台 job 包装
 │  ├─ video-frames.mjs   # 无 ffmpeg 时的回环 HTTP + Chrome 解码 + canvas 截帧
 │  └─ store.mjs          # 路径、Markdown、last.json
-├─ skills/               # 本地私有技能，公开仓库不包含
 ├─ conversations/        # 运行产物（gitignore）
 ├─ images/               # 运行产物（gitignore）
 ├─ video-frames/         # 截帧产物（gitignore）
 └─ .state/               # 运行状态（gitignore）
 ```
 
-## 与旧版的差异
+## 设计取舍
 
-- 驱动层从 `chrome-use`（自己一套扩展 + native messaging）换成 **DSH-Browser-Control 扩展 + 桥接**，与 DSH 浏览器工具共用同一条链路。
-- 删除 `chatgpt-use.exe`、`image-use`、Python 依赖；生图和续聊都用同一套网页驱动重写。
-- 不再支持 `--model`（网页模型档位）与 `--project`（ChatGPT Project 归档）：桥接驱动保持当前账号/当前默认模型，新会话是普通会话。
-- `--format` 移除：网页生图统一返回 PNG。
+- 网页驱动走 **DSH-Browser-Control 扩展 + 桥接**，和 DSH `browser_*` 工具共用同一条链路，不额外安装浏览器扩展。
+- 视频主后端是 **ffmpeg**：单遍滤镜、精确 seek、切点与总览图都更准更快；Chrome 回退只用于没有 ffmpeg 的应急场景。
+- 预设**只组合工具**：没有自定义 persona，不引用任何技能文件，也不绑定某个视频生成平台；生成环节由使用者自己的工具链完成。
+- 后台任务走 DSH `ctx.jobs`：结果与完成通知由 DSH 统一管理，插件不自己维护轮询进程。
 
 ## 已知限制
 
-- 同一扩展桥接一次只能串行驱动一个页面动作；不要并发调用。
-- Free 套餐有生图额度；额度用尽会明确报错（`你已达到 Free 套餐的图像生成请求上限…`），不会静默挂起或保存错图。
+- 同一扩展桥接一次只能串行驱动一个页面动作；不要并发调用 gpt 工具。
+- Free 套餐有生图额度；额度用尽会明确报错，不会静默挂起或保存错图。
 - 面板窗口的「锁定」、只读/禁脚本策略由浏览器扩展控制；被拦住时命令会带可读错误返回。
 - 网页改版可能让选择器失效；`src/chatgpt.mjs` 里的 composer / send 选择器集中在一处，便于修。
-- 会话记录接口不可用时 `gpt_ask` 会失败，而不是退化成抓 innerText。
-- 视频主后端是 ffmpeg：`ffmpegPath` 指向不存在的文件会明确报错；Format Factory 之类的共享构建需要同目录 DLL 一起保留（spawn 时会把工作目录设为 ffmpeg 所在目录）。
+- 视频主后端是 ffmpeg：`ffmpegPath` 指向不存在的文件会明确报错；共享构建需要同目录 DLL 一起保留（spawn 时会把工作目录设为 ffmpeg 所在目录）。
 - `video_scenes` 只检测高于 `threshold` 的硬切；渐变/溶解转场可能漏检，阈值要按素材微调。
 - `video_sheet` 显式给 `fps` 时只取前 `columns*rows` 个采样帧（适合短片）；默认 `cover: true` 会把采样密度算成 `(columns*rows)/duration`，覆盖整段。
-- `video_frames` 单次最多 16 帧（`max_frames` 默认 12），超过上限会按时间均匀抽样；间隔语义会被改变。
-- `width` 只缩小不放大；源视频 320×176 时设 1280 仍是 320×176。ffmpeg 后端的 `quality` 参数不生效（统一 `q:v 2`）。
+- `video_frames` 单次最多 16 帧（`max_frames` 默认 12），超过上限会按时间均匀抽样；间隔语义会被改变。`width` 只缩小不放大；ffmpeg 后端的 `quality` 参数不生效（统一 `q:v 2`）。
 - 没有 ffmpeg 时 `video_probe`/`video_frames` 会回退 Chrome：Chrome 会冻结后台标签页，截帧期间标签页保持激活，且最好让 Chrome 窗口可见，否则 seek 可能变慢或超时；`video_scenes`/`video_sheet` 在回退模式下不可用。
 - 一次工具结果里附加太多图片会受 DSH attachment 的服务端限制（默认每消息 20 张）；建议单次 ≤12 帧，或先用 `video_sheet` 看整体。
 
 ## 隐私
 
-本仓库**不包含** `skills/`、`.state/`、`conversations/`、`images/`、`video-frames/` 等私有工作材料；`.gitignore` 已把它们排除。ai漫剧师预设只提供入口与插件组合，具体技能（`aigc-comic-pipeline`、`aigc-asset-generation`、`aigc-vault-rules` 等）由使用者本地提供。
+本仓库**不包含**任何技能文件、`.state/`、`conversations/`、`images/`、`video-frames/` 等私有工作材料；`.gitignore` 已把它们排除。ShotFlow 的预设只组合工具，不读取也不依赖任何技能目录。
 
 ## 致谢
 
 - [@angelky7/dsh-browser-control](https://github.com/angelky7/dsh-browser-control) — 本地 WebSocket/CDP 桥与 Chrome 扩展。
-- ChatGPT 网页驱动思路源自早期的 `gpt` CLI（chrome-use 版本）。
 
 许可证：MIT（本仓库代码）。

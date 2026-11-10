@@ -17,7 +17,7 @@ import { detectScenes, extractFramesWithFfmpeg, makeContactSheet, probeWithFfmpe
 import { Store, defaultPluginRoot, nowStamp, slugify } from './store.mjs'
 import { extractFrames as extractChromeFrames, parseTime, probeVideo as probeChromeVideo } from './video-frames.mjs'
 
-export const name = 'dsh-aicd-video'
+export const name = 'dsh-shotflow-video'
 export const inject = ['tools']
 
 const str = (description) => ({ type: 'string', description })
@@ -288,7 +288,7 @@ export function apply(ctx, config = {}) {
           maxFrames: limit,
           maxWidth: Number(args.width || 1280),
           outDir,
-          onProgress: (message) => ctx.logger?.info?.(`[dsh-aicd-video] ${message}`),
+          onProgress: (message) => ctx.logger?.info?.(`[dsh-shotflow-video] ${message}`),
         })
         result.backend = 'ffmpeg'
         result.duration = probe.duration
@@ -306,7 +306,7 @@ export function apply(ctx, config = {}) {
           maxWidth: Number(args.width || 1280),
           quality: Number(args.quality || 0.85),
           outDir,
-          onProgress: (message) => ctx.logger?.info?.(`[dsh-aicd-video] ${message}`),
+          onProgress: (message) => ctx.logger?.info?.(`[dsh-shotflow-video] ${message}`),
         })
         result.backend = 'chrome'
       }
@@ -506,6 +506,6 @@ export function apply(ctx, config = {}) {
   })
 
   ctx.logger?.info?.(
-    `[dsh-aicd-video] video_probe/video_frames/video_scenes/video_sheet registered (ffmpeg: ${runtime.ffmpeg.ffmpeg || 'none'}, output ${runtime.store.videoFrames})`,
+    `[dsh-shotflow-video] video_probe/video_frames/video_scenes/video_sheet registered (ffmpeg: ${runtime.ffmpeg.ffmpeg || 'none'}, output ${runtime.store.videoFrames})`,
   )
 }

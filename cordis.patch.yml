@@ -1,40 +1,30 @@
 # Root-level tool rows: disabled by default so other presets do NOT get them by
 # accident. Turn one on (DSH Settings → Plugins, or flip `disabled`) to expose it
-# to presets that do not declare the row themselves. The ai漫剧师 preset below
-# always carries its own enabled copies.
+# to presets that do not declare the row themselves. The AI 视频工作流 preset
+# below carries its own enabled copies.
 - insert:
     - id: gpt-tools
-      name: 'dsh-aicd'
+      name: 'dsh-shotflow'
       disabled: true
     - id: video-tools
-      name: 'dsh-aicd/video'
+      name: 'dsh-shotflow/video'
       disabled: true
       config:
         backend: auto
         # ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
 
-# The ai漫剧师 agent preset (recovered from the old AIGC-Comic-drama project)
-# includes gpt-tools, so a session on that preset has the gpt tools out of the box.
+# AI video generation workflow preset: tools only. No persona and no extra
+# context files — just the ChatGPT web tools and the local ffmpeg video analysis
+# tools, so the agent prompt stays clean.
 - insert:
-    - id: preset-aigc-comic-pipeline
+    - id: preset-ai-video-workflow
       name: '@deepseek-ai/dsh-agent-preset'
       config:
-        id: aigc-comic-pipeline
-        name: ai漫剧师
-        description: 'AIGC 漫剧全流程：小说→剧本→设定图→分镜→Pixmax CLI 生成视频。'
+        id: ai-video-workflow
+        name: AI 视频工作流
+        description: 'AI 视频生成工作流工具集：ChatGPT 网页对话/生图 + ffmpeg 视频解析（探测、截帧、切点、总览图）。'
         order: 20
         plugins:
-          - id: persona
-            name: '@deepseek-ai/dsh-persona'
-            config:
-              prefix: |-
-                You are an AIGC 漫剧生成团队成员，负责「小说→剧本→设定图→分镜/视频提示词→Pixmax CLI 准备生成视频」全流程。
-
-                开工前先加载技能 `aigc-comic-pipeline`（全流程总入口，四阶段+闸门）；阶段②生成设定图时加载技能 `aigc-asset-generation`；凡读取/整理/移动工作库任何文件先加载技能 `aigc-vault-rules`。
-
-                资产主目录为 `女主她不想忍/`（`人物/`、`场景/`、`道具/`，图片与同名 `.txt` 提示词放一起，被替换的旧版进各 `<类别>/废稿/`）；`作业/` 保留为按日期归档的只读源。
-
-                严格遵循技能里的阶段闸门（①剧本不过审不进入②③④；②设定图未通过审查决策树不进入④）与安全纪律（Pixmax token 不入库、远端写/上传/删除/提交前先 --dry-run、真实线上生成需 PIXMAX_LIVE_GENERATE=1、额度/登录限制立即暂停报告）。
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
@@ -57,37 +47,33 @@
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
-          - id: tool-schedule
-            name: '@deepseek-ai/dsh-tool-schedule'
-          - id: skill-filesystem
-            name: '@deepseek-ai/dsh-skill-filesystem'
-          - id: tool-skill
-            name: '@deepseek-ai/dsh-tool-skill'
-          - id: command-goal
-            name: '@deepseek-ai/dsh-command-goal'
-          - id: tool-goal
-            name: '@deepseek-ai/dsh-tool-goal'
-          - id: planning
-            name: cordis:group
-            group: true
-            isolate:
-              planMode: true
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
             config:
-              - id: plan-mode
-                name: '@deepseek-ai/dsh-plan-mode'
-                config:
-                  section: |
-                    You are in plan mode. Stay in plan mode until the user approves your plan through exit_plan_mode or switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
-
-                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
-
-                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
-
-                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
-
-                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
-
-                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          # ChatGPT web tools: gpt_ask / gpt_image / gpt_last (background jobs supported)
+          - id: gpt-tools
+            name: 'dsh-shotflow'
+            config:
+              bridgeUrl: 'http://127.0.0.1:9777'
+              token: 'dsh-local'
+          # Local video tools: video_probe / video_frames / video_scenes / video_sheet
+          - id: video-tools
+            name: 'dsh-shotflow/video'
+            config:
+              bridgeUrl: 'http://127.0.0.1:9777'
+              token: 'dsh-local'
+              backend: auto
+              # ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
           - id: compaction
             name: cordis:group
             group: true
@@ -105,62 +91,3 @@
                   thresholdChars: 8192
                   headChars: 4096
                   tailChars: 1024
-          - id: delegation
-            name: cordis:group
-            group: true
-            isolate:
-              workflowEngine: true
-            config:
-              - id: tool-subagent-control
-                name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent
-                name: '@deepseek-ai/dsh-tool-subagent'
-                config:
-                  provider: spawn
-                  toolName: subagent
-                  modelSelection: true
-                  modelDiscovery: true
-              - id: tool-subagent-fork
-                name: '@deepseek-ai/dsh-tool-subagent'
-                config:
-                  provider: fork
-                  toolName: subagent_fork
-              - id: workflow-ptc
-                name: '@deepseek-ai/dsh-workflow-ptc'
-                config:
-                  provider: spawn
-              - id: tool-workflow
-                name: '@deepseek-ai/dsh-tool-workflow'
-          - id: tool-ask-user
-            name: '@deepseek-ai/dsh-tool-ask-user'
-          - id: tool-todo
-            name: '@deepseek-ai/dsh-tool-todo'
-            config:
-              allowParallelInProgress: true
-          - id: tool-web
-            name: '@deepseek-ai/dsh-tool-web'
-            config:
-              fetch: true
-              searchTimeoutMs: 60000
-          # gpt tools: gpt_ask / gpt_image / gpt_last (this bundle's plugin entry)
-          - id: gpt-tools
-            name: 'dsh-aicd'
-            config:
-              bridgeUrl: 'http://127.0.0.1:9777'
-              token: 'dsh-local'
-          # video tools: video_probe / video_frames (cuts frames and attaches them)
-          - id: video-tools
-            name: 'dsh-aicd/video'
-            config:
-              bridgeUrl: 'http://127.0.0.1:9777'
-              token: 'dsh-local'
-              backend: auto
-              # ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
-          - id: present
-            name: '@deepseek-ai/dsh-tool-present'
-          - id: tool-plugin-manager
-            name: '@deepseek-ai/dsh-plugin-manager/tools'
-            disabled: !!js "!ctx.get('profileContext')"
-          - id: tool-plugin-market
-            name: '@deepseek-ai/dsh-plugin-market/tools'
-            disabled: true

@@ -10,8 +10,8 @@
  * blocked while ChatGPT generates. The result is read with `job_output` after
  * the in-session completion notice, and `job_kill` cancels it.
  *
- * This module is the plugin entry of the `dsh-aicd` bundle. It is deliberately
- * NOT mounted at profile level by that bundle: the ai漫剧师 preset includes it,
+ * This module is the plugin entry of the `dsh-shotflow` bundle. It is deliberately
+ * NOT mounted at profile level by that bundle: the AI 视频工作流 preset includes it,
  * and any other preset can opt in by adding one row (see README).
  */
 
@@ -23,7 +23,7 @@ import { WebError, generateImage, normalizeConversationId, sendPrompt } from './
 import { startBackgroundJob } from './job-runner.mjs'
 import { Store, defaultPluginRoot, nowIso, nowStamp, slugify } from './store.mjs'
 
-export const name = 'dsh-aicd'
+export const name = 'dsh-shotflow'
 export const inject = ['tools']
 
 const str = (description) => ({ type: 'string', description })
@@ -351,6 +351,6 @@ export function apply(ctx, config = {}) {
     },
   })
 
-  const banner = `[dsh-aicd] gpt_ask/gpt_image/gpt_last registered (bridge ${runtime.bridge.url}, root ${runtime.root}; background jobs via ctx.jobs)`
+  const banner = `[dsh-shotflow] gpt_ask/gpt_image/gpt_last registered (bridge ${runtime.bridge.url}, root ${runtime.root}; background jobs via ctx.jobs)`
   ctx.logger?.info?.(banner)
 }
