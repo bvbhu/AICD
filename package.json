@@ -1,7 +1,7 @@
 {
   "name": "dsh-shotflow",
   "version": "0.2.0",
-  "description": "DSH plugin bundle for AI video generation workflows: ChatGPT web tools + ffmpeg video analysis",
+  "description": "DSH plugin bundle for AI video generation workflows: ChatGPT web tools, optional SenseNova image API, ffmpeg video analysis, and read-only Pixmax inspection",
   "type": "module",
   "main": "./src/gpt-tools.mjs",
   "exports": {
@@ -9,8 +9,11 @@
     "./video": "./src/video-tools.mjs",
     "./bridge": "./src/bridge.mjs",
     "./chatgpt": "./src/chatgpt.mjs",
+    "./credentials": "./src/credentials.mjs",
     "./ffmpeg": "./src/ffmpeg.mjs",
     "./job-runner": "./src/job-runner.mjs",
+    "./pixmax": "./src/pixmax-tools.mjs",
+    "./sensenova": "./src/sensenova.mjs",
     "./video-frames": "./src/video-frames.mjs",
     "./store": "./src/store.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
@@ -38,6 +41,8 @@
     "ffmpeg",
     "video",
     "ai-video",
+    "sensenova",
+    "pixmax",
     "agent-preset"
   ],
   "dsh": {

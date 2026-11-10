@@ -17,7 +17,13 @@ const CONV_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/
 const ARTIFACT_RE = /<[A-Za-z][\w:.-]*(?:\s[^<>]{0,200})?\/>/g
 
 const COMPOSER = 'form div[contenteditable="true"]'
-const COMPOSER_READY = `!!document.querySelector(${JSON.stringify(COMPOSER)})`
+// ChatGPT can keep a hidden, zero-width composer beside the visible one; always
+// drive the visible element.
+const PICK_COMPOSER = `(() => {
+  const list = [...document.querySelectorAll(${JSON.stringify(COMPOSER)})];
+  return list.find((el) => el.getBoundingClientRect().width > 0) || list[0] || null;
+})()`
+const COMPOSER_READY = `!!(${PICK_COMPOSER})`
 
 export class WebError extends Error {
   constructor(message, code = 'web_error') {
@@ -66,7 +72,7 @@ async function ensureLoggedInComposer(bridge, tabId, timeoutMs = 60000, signal) 
       last = await bridge.evalIn(
         tabId,
         `(() => {
-          const composer = document.querySelector(${JSON.stringify(COMPOSER)});
+          const composer = ${PICK_COMPOSER};
           if (composer) return { ready: true, path: location.pathname, title: document.title };
           const body = document.body ? document.body.innerText.slice(0, 400) : '';
           return { ready: false, path: location.pathname, title: document.title, body };
@@ -92,7 +98,7 @@ async function clearComposer(bridge, tabId) {
   return await bridge.evalIn(
     tabId,
     `(() => {
-      const el = document.querySelector(${JSON.stringify(COMPOSER)});
+      const el = ${PICK_COMPOSER};
       if (!el) return false;
       el.focus();
       document.execCommand('selectAll', false, null);
@@ -106,7 +112,7 @@ async function typePrompt(bridge, tabId, text) {
   const focused = await bridge.evalIn(
     tabId,
     `(() => {
-      const el = document.querySelector(${JSON.stringify(COMPOSER)});
+      const el = ${PICK_COMPOSER};
       if (!el) return false;
       el.focus();
       return document.activeElement === el || el.contains(document.activeElement);
@@ -114,7 +120,7 @@ async function typePrompt(bridge, tabId, text) {
   )
   if (!focused) throw new WebError('无法聚焦 ChatGPT 输入框', 'composer_focus')
   await bridge.cdp(tabId, 'Input.insertText', { text })
-  const typed = await bridge.evalIn(tabId, `document.querySelector(${JSON.stringify(COMPOSER)}).innerText`)
+  const typed = await bridge.evalIn(tabId, `(${PICK_COMPOSER})?.innerText || ''`)
   if (!String(typed || '').trim()) throw new WebError('输入框内容为空（CDP 输入失败）', 'input_failed')
   return typed
 }
@@ -148,6 +154,46 @@ async function currentConversation(bridge, tabId) {
       return { id: m ? m[1] : '', path: location.pathname, title: document.title };
     })()`,
   )
+}
+
+/** Pick an already-open chatgpt.com tab so tools can reuse the user's session. */
+export async function findChatTab(bridge) {
+  const tabs = await bridge.listTabs().catch(() => null)
+  const list = tabs?.tabs || []
+  return list.find((tab) => /^https:\/\/chatgpt\.com\//i.test(tab.url || ''))?.id || 0
+}
+
+/** Bring a reused tab to a fresh chat (or the requested conversation). */
+async function prepareConversationTab(bridge, tabId, conversation, signal) {
+  throwIfAborted(signal)
+  if (conversation) {
+    const current = await currentConversation(bridge, tabId)
+    if (current.id !== conversation) {
+      await bridge.navigate(tabId, CONV_URL(conversation), { waitUntil: 'domcontentloaded', timeoutMs: 30000 })
+    }
+    return
+  }
+  const current = await currentConversation(bridge, tabId).catch(() => null)
+  if (!current || current.id || current.path !== '/') {
+    const clicked = await bridge.evalIn(
+      tabId,
+      `(() => {
+        const btn = [...document.querySelectorAll('button')].find((x) => (x.getAttribute('aria-label') || '') === '新聊天' && x.getBoundingClientRect().width > 0);
+        if (!btn) return 'no';
+        btn.click();
+        return 'clicked';
+      })()`,
+    ).catch(() => 'no')
+    if (clicked !== 'clicked') {
+      await bridge.navigate(tabId, CHAT_URL, { waitUntil: 'domcontentloaded', timeoutMs: 30000 })
+    }
+    const deadline = Date.now() + 15000
+    while (Date.now() < deadline) {
+      const state = await currentConversation(bridge, tabId).catch(() => null)
+      if (state && !state.id && state.path === '/') return
+      await sleep(500)
+    }
+  }
 }
 
 function conversationStateExpr(id) {
@@ -233,35 +279,39 @@ async function waitForConversationId(bridge, tabId, timeoutMs = 90000, signal) {
 }
 
 /** Send one prompt in a fresh or existing conversation. */
-export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 300, onProgress, signal }) {
+export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 300, onProgress, signal, tabId, reuseExistingTab = true }) {
   throwIfAborted(signal)
   const timeoutMs = Math.max(30, Number(timeoutSec) || 300) * 1000
   const existingId = conversation ? normalizeConversationId(conversation) : ''
-  const tabId = await bridge.openTab(existingId ? CONV_URL(existingId) : CHAT_URL, {
+  const reused = tabId || (reuseExistingTab ? await findChatTab(bridge) : 0)
+  const targetTab = reused || await bridge.openTab(existingId ? CONV_URL(existingId) : CHAT_URL, {
     active: false,
     waitUntil: 'domcontentloaded',
     timeoutMs: 30000,
   })
+  const owned = !reused
+  const tabIdResolved = targetTab
   let closed = false
   const onAbort = () => {
-    bridge.closeTab(tabId).catch(() => {})
+    bridge.closeTab(tabIdResolved).catch(() => {})
   }
   signal?.addEventListener?.('abort', onAbort, { once: true })
   try {
-    await ensureLoggedInComposer(bridge, tabId, 60000, signal)
+    if (reused) await prepareConversationTab(bridge, tabIdResolved, existingId, signal)
+    await ensureLoggedInComposer(bridge, tabIdResolved, 60000, signal)
     throwIfAborted(signal)
     let before = null
     if (existingId) {
-      before = await readState(bridge, tabId, existingId)
+      before = await readState(bridge, tabIdResolved, existingId)
       progress(onProgress, `挂载会话 ${existingId}（已有 ${before.count} 条消息）`)
     }
 
-    await clearComposer(bridge, tabId)
-    await typePrompt(bridge, tabId, prompt)
+    await clearComposer(bridge, tabIdResolved)
+    await typePrompt(bridge, tabIdResolved, prompt)
     progress(onProgress, `发送到 ChatGPT 网页（timeout=${Math.round(timeoutMs / 1000)}s）…`)
-    await clickSend(bridge, tabId)
+    await clickSend(bridge, tabIdResolved)
 
-    const id = existingId || (await waitForConversationId(bridge, tabId, 90000, signal))
+    const id = existingId || (await waitForConversationId(bridge, tabIdResolved, 90000, signal))
     if (!id) throw new WebError('发送后没有拿到 conversation id：页面没有进入会话页', 'no_conversation_id')
     if (!existingId) progress(onProgress, `新会话 ${id}`)
 
@@ -269,12 +319,12 @@ export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 30
     await sleep(1500)
     while (Date.now() < deadline) {
       throwIfAborted(signal)
-      const state = await readState(bridge, tabId, id).catch(() => null)
+      const state = await readState(bridge, tabIdResolved, id).catch(() => null)
       if (state) {
         const last = state.last
         const started = existingId ? state.assistants > before.assistants : state.count > 0
         if (started && last?.end && last.status === 'finished_successfully' && last.len > 0) {
-          const text = await readReplyText(bridge, tabId, id)
+          const text = await readReplyText(bridge, tabIdResolved, id)
           if (!text.trim()) throw new WebError('回复为空', 'empty_reply')
           return {
             conversation_id: id,
@@ -292,37 +342,41 @@ export async function sendPrompt({ bridge, prompt, conversation, timeoutSec = 30
     )
   } finally {
     signal?.removeEventListener?.('abort', onAbort)
-    if (!closed) {
+    if (!closed && owned) {
       closed = true
-      await bridge.closeTab(tabId).catch(() => {})
+      await bridge.closeTab(tabIdResolved).catch(() => {})
     }
   }
 }
 
 /** Create a new conversation and generate one image; returns the saved page image URLs. */
-export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 300, onProgress, out, signal }) {
+export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 300, onProgress, out, signal, tabId, reuseExistingTab = true }) {
   throwIfAborted(signal)
   const timeoutMs = Math.max(30, Number(timeoutSec) || 300) * 1000
-  const tabId = await bridge.openTab(CHAT_URL, { active: false, waitUntil: 'domcontentloaded', timeoutMs: 30000 })
+  const reused = tabId || (reuseExistingTab ? await findChatTab(bridge) : 0)
+  const tabIdResolved = reused || await bridge.openTab(CHAT_URL, { active: false, waitUntil: 'domcontentloaded', timeoutMs: 30000 })
+  const owned = !reused
+  let closed = false
   const onAbort = () => {
-    bridge.closeTab(tabId).catch(() => {})
+    bridge.closeTab(tabIdResolved).catch(() => {})
   }
   signal?.addEventListener?.('abort', onAbort, { once: true })
   try {
-    await ensureLoggedInComposer(bridge, tabId, 60000, signal)
+    if (reused) await prepareConversationTab(bridge, tabIdResolved, '', signal)
+    await ensureLoggedInComposer(bridge, tabIdResolved, 60000, signal)
     throwIfAborted(signal)
     // Clear FIRST: select-all + delete in the composer would also wipe an
     // attachment chip, so attachments are added only after the box is empty.
-    await clearComposer(bridge, tabId)
+    await clearComposer(bridge, tabIdResolved)
     if (refs.length > 0) {
-      await attachFiles(bridge, tabId, refs)
+      await attachFiles(bridge, tabIdResolved, refs)
       progress(onProgress, `已附加 ${refs.length} 张参考图`)
     }
-    await typePrompt(bridge, tabId, prompt)
+    await typePrompt(bridge, tabIdResolved, prompt)
     progress(onProgress, `发送生图请求（timeout=${Math.round(timeoutMs / 1000)}s）…`)
-    await clickSend(bridge, tabId)
+    await clickSend(bridge, tabIdResolved)
 
-    const id = await waitForConversationId(bridge, tabId, 90000, signal)
+    const id = await waitForConversationId(bridge, tabIdResolved, 90000, signal)
     if (!id) throw new WebError('发送后没有拿到 conversation id：页面没有进入会话页', 'no_conversation_id')
     progress(onProgress, `新会话 ${id}`)
 
@@ -331,7 +385,7 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
     await sleep(2000)
     while (Date.now() < deadline) {
       throwIfAborted(signal)
-      const state = await readState(bridge, tabId, id).catch(() => null)
+      const state = await readState(bridge, tabIdResolved, id).catch(() => null)
       if (state) {
         if (state.images.length > 0) {
           // ChatGPT virtualises the transcript: scroll to the newest turn so the
@@ -339,14 +393,14 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
           const renderDeadline = Date.now() + 15000
           let images = []
           while (Date.now() < renderDeadline) {
-            await bridge.evalIn(tabId, `window.scrollTo(0, document.body.scrollHeight)`, { timeoutMs: 10000 }).catch(() => {})
+            await bridge.evalIn(tabIdResolved, `window.scrollTo(0, document.body.scrollHeight)`, { timeoutMs: 10000 }).catch(() => {})
             await sleep(800)
-            images = await collectRenderedImages(bridge, tabId)
+            images = await collectRenderedImages(bridge, tabIdResolved)
             if (images.length > 0) break
           }
           if (images.length > 0) {
             const chosen = images.sort((a, b) => b.width * b.height - a.width * a.height)[0]
-            const saved = await saveImageBytes(bridge, tabId, chosen.src, out)
+            const saved = await saveImageBytes(bridge, tabIdResolved, chosen.src, out)
             return { conversation_id: id, title: state.title, path: saved.path, width: chosen.width, height: chosen.height, source: chosen.src }
           }
         }
@@ -369,7 +423,10 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
     )
   } finally {
     signal?.removeEventListener?.('abort', onAbort)
-    await bridge.closeTab(tabId).catch(() => {})
+    if (!closed && owned) {
+      closed = true
+      await bridge.closeTab(tabIdResolved).catch(() => {})
+    }
   }
 }
 

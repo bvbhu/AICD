@@ -2,9 +2,10 @@
 
 一个 DSH bundle，提供 AI 视频生成工作流里最常用的两类工具，以及一个**只装工具**的预设：
 
-1. **ChatGPT 网页工具** — `gpt_ask`（对话→Markdown）、`gpt_image`（生图→PNG）、`gpt_last`（最近会话 id），另带 `gpt` CLI；`gpt_ask` / `gpt_image` 支持后台执行，生成期间不阻塞对话。
+1. **ChatGPT 网页工具** — `gpt_ask`（对话→Markdown）、`gpt_image`（生图/改图）、`gpt_last`（最近会话 id），另带 `gpt` CLI；`gpt_ask` / `gpt_image` 支持后台执行，生成期间不阻塞对话。`gpt_image` 由模型选择渠道：`browser`（ChatGPT 网页）或 `sensenova`（SenseNova U1.5 图像 API）。
 2. **视频解析工具** — `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（镜头切点）、`video_sheet`（总览图）。默认走 ffmpeg，没有 ffmpeg 时探测/截帧回退 Chrome；帧和总览图会作为图片附加到当前会话。
-3. **「AI 视频工作流」预设** — 只组合上面这些工具与基础文件/命令/任务能力，不带自定义 persona、不绑定任何具体视频生成平台、不依赖任何技能文件，避免给 agent 增加无关上下文。
+3. **Pixmax 只读工具** — `pixmax` 查询工作区/画布/节点/模型/任务/模板；**不提供任何会消耗积分或修改画布的操作**。
+4. **「AI 视频工作流」预设** — 只组合上面这些工具与基础文件/命令/任务能力，不带自定义 persona、不绑定任何具体视频生成平台、不依赖任何技能文件。
 
 不绑定固定平台：生成环节用你自己的工具链；ShotFlow 只负责网页对话/生图与本地视频解析。
 
@@ -16,33 +17,36 @@
 
 | 部分 | 内容 |
 | --- | --- |
-| gpt 工具 | `src/gpt-tools.mjs` → `gpt_ask` / `gpt_image` / `gpt_last`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
+| gpt 工具 | `src/gpt-tools.mjs` → `gpt_ask` / `gpt_image` / `gpt_last` / `api_key`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
+| 生图渠道 | `browser` 走 ChatGPT 网页（`src/chatgpt.mjs`）；`sensenova` 走 SenseNova Images API（`src/sensenova.mjs`）；密钥解析在 `src/credentials.mjs` |
 | 后台任务 | `src/job-runner.mjs` → 把 `background: true` 的生成挂到 DSH `ctx.jobs`，完成后用 `job_output` 取结果 |
 | 视频工具 | `src/video-tools.mjs` → `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；`src/ffmpeg.mjs` 是主后端，`src/video-frames.mjs` 是无 ffmpeg 时的 Chrome 回退 |
+| Pixmax 工具 | `src/pixmax-tools.mjs` → `pixmax` 只读查询；直接调用当前 runtime 的 `entry.py`，绕过启动器更新门禁 |
 | 预设 | `cordis.patch.yml` 插入 `@deepseek-ai/dsh-agent-preset`：`id: ai-video-workflow`，`name: AI 视频工作流` |
 
 ## 运行时序
 
 ```
-gpt_ask / gpt_image / gpt CLI
+gpt_ask / gpt_image(browser) / gpt CLI
+        │  优先复用已打开的 chatgpt.com 标签页；没有才新开
         │  HTTP POST /api/command（Bearer token）
         ▼
-@angelky7/dsh-browser-control 桥（127.0.0.1:9777）
-        │  WebSocket
+@angelky7/dsh-browser-control 桥（127.0.0.1:9777）→ DSH-Browser-Control 扩展 → 已登录 ChatGPT 标签页
+
+gpt_image(channel=sensenova)
+        │  POST https://token.sensenova.cn/v1/images/{generations|edits}
         ▼
-DSH-Browser-Control Chrome 扩展（v1.7.2）
-        │  chrome.debugger → CDP
+保存 PNG/JPEG/WebP 到 <root>/images/
+
+pixmax（只读）
+        │  python <pixmaxHome>/runtime/versions/<current>/entry.py --json <command>
         ▼
-你已登录的 chatgpt.com 标签页（gpt 每次新开一个后台标签，做完即关）
+Pixmax /user/api 只读端点（doctor/project/canvas/node/model/task/template）
 
 video_probe / video_frames / video_scenes / video_sheet
-        │  ffmpeg（优先；ffmpegPath 可配置）
-        │  ffmpeg -i 探测 / fps+select 单遍截帧 / scene+showinfo 找切点 / tile 拼图
+        │  ffmpeg（优先；ffmpegPath 可配置）或 Chrome 回退
         ▼
-DSH attachments 服务 → 作为图片块附加到当前会话，交给图像模型分析
-
-        （没有 ffmpeg 时的回退）
-        本地回环 HTTP（随机端口 + 随机 token）→ Chrome <video> 解码 → canvas JPEG
+DSH attachments 服务 → 图片块附加到当前会话
 ```
 
 回复不是从 DOM 抄的：它读取 `/backend-api/conversation/<id>` 的 `content.parts`，所以 Markdown 表格、代码块、加粗都保真。
@@ -56,6 +60,8 @@ DSH attachments 服务 → 作为图片块附加到当前会话，交给图像�
 | Chrome | 116+，且已登录 <https://chatgpt.com>（gpt 工具与视频回退都需要） |
 | Chrome 扩展 | **DSH-Browser-Control**（与 `@angelky7/dsh-browser-control` 配套的那个，v1.7.2 实测） |
 | DSH 插件 | `@angelky7/dsh-browser-control` 已安装并在设置中启用（默认端口 `9777`、token `dsh-local`） |
+| SenseNova（可选） | 只用 `channel=sensenova` 时需要 `SENSENOVA_API_KEY`（环境变量优先，否则写入 DSH 凭据中心） |
+| Pixmax CLI（可选） | 只用 `pixmax` 工具时需要本机已安装 `~/.pixmax-cli`；工具直接读当前 runtime，不触发更新门禁 |
 | Node | ≥ 20（DSH 自带的 Node 即可） |
 
 `ffmpegPath` 可以指向任意 ffmpeg 构建（共享构建需要同目录 DLL 一起保留）：
@@ -82,12 +88,12 @@ dsh plugin --profile <profile> add link:<repo>
 安装后：
 
 - 新建会话时预设列表里出现 **「AI 视频工作流」**；
-- 在该预设会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` 和 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；
+- 在该预设会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` / `api_key`、`pixmax` 和 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；
 - 其他预设（如内置 standard）里**没有**这些工具。
 
 ### 其他预设：手动启用工具
 
-根级 `gpt-tools` / `video-tools` 默认关闭。需要时在 DSH 的插件/设置界面启用，或写进目标预设的 `plugins` 列表：
+根级 `gpt-tools` / `video-tools` / `pixmax-tools` 默认关闭。需要时在 DSH 的插件/设置界面启用，或写进目标预设的 `plugins` 列表：
 
 ```yaml
 - id: gpt-tools
@@ -95,7 +101,9 @@ dsh plugin --profile <profile> add link:<repo>
   config:
     bridgeUrl: 'http://127.0.0.1:9777'   # 可选
     token: 'dsh-local'                   # 可选
+    reuseExistingTab: true               # 默认 true：优先复用已打开的 chatgpt.com 标签页
     root: 'D:/path/to/outputs'           # 可选，默认 ~/.dsh/gpt-web
+    # sensenovaBaseUrl / sensenovaModel 也可覆盖
 - id: video-tools
   name: 'dsh-shotflow/video'
   config:
@@ -103,6 +111,11 @@ dsh plugin --profile <profile> add link:<repo>
     token: 'dsh-local'                   # 可选
     ffmpegPath: 'D:/path/to/ffmpeg.exe'  # 可选；不填则自动找
     root: 'D:/path/to/outputs'           # 可选，默认 ~/.dsh/gpt-web
+- id: pixmax-tools
+  name: 'dsh-shotflow/pixmax'
+  config:
+    pixmaxHome: 'C:/Users/you/.pixmax-cli'  # 可选
+    environment: cn                         # 可选：cn | global
 ```
 
 > DSH 的 preset 覆盖是**整份 `plugins` 列表替换**，不是逐项合并；覆盖内置 preset 时记得把原有条目一起带上。
@@ -112,8 +125,10 @@ dsh plugin --profile <profile> add link:<repo>
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
 | `gpt_ask` | `prompt`(必填)、`file[]`、`conversation`、`out`、`timeout`、`background` | `conversation_id`、`text`、Markdown `path`、`url`、`title`（后台模式返回 `job_id`） |
-| `gpt_image` | `prompt`(必填)、`ref[]`、`out`、`size`、`timeout`、`background` | 图片绝对 `path`、`conversation_id`、宽高（后台模式返回 `job_id`） |
+| `gpt_image` | `prompt`(必填)、**`channel`(必填)**、`ref[]`、`out`、`size`、`format`、`watermark`、`model`、`timeout`、`background` | 图片绝对 `path`、`channel`、`conversation_id`、宽高（后台模式返回 `job_id`） |
 | `gpt_last` | — | 最近会话的 `conversation_id` / `url` / `path` |
+| `api_key` | `service`(`sensenova`/`pixmax`)、`action`(`status`/`set`/`clear`)、`value` | 是否配置、来源（env/凭据中心）、是否允许写入 |
+| `pixmax` | `action`、`selector`、`query`、`type`、`generated`、`online`、`timeout` | 只读 JSON 查询结果 |
 | `video_probe` | `path`(必填) | `duration`、`width` / `height`、`fps`、`codec`、`backend` |
 | `video_frames` | `path`(必填)、`every` / `times` / `frames` 三选一、`from`、`to`、`max_frames`、`width`、`quality`、`out`、`attach`、`backend` | 帧文件路径 + 元数据，并把帧附加到当前会话 |
 | `video_scenes` | `path`(必填)、`threshold`、`max_scenes`、`from`、`to` | 镜头切点时间列表（ffmpeg） |
@@ -121,9 +136,66 @@ dsh plugin --profile <profile> add link:<repo>
 
 - `conversation` 支持 conversation id、`https://chatgpt.com/c/<id>` 或 `last`。
 - `file` 会作为文本上下文拼在 prompt 前面。
-- `size` 只是写进 prompt 的尺寸提示（网页生图不保证精确像素）。
-- 每次 gpt 调用都会新开一个**后台**标签页，结束即关；不用你手动点网页。
-- 串行使用：同一时间不要并发跑多个 `gpt_ask`。
+- `gpt_image` 的 `channel` 必须由模型选择，渠道特点见下文。
+- gpt 调用**优先复用已打开的 chatgpt.com 标签页**（会在里面点“新聊天”或打开指定会话）；没有可用标签页时才新开一个后台标签页。串行执行：同一时间不要并发调用。
+
+### 生图渠道：模型选 `channel`
+
+`gpt_image` 必须指定渠道，工具描述里已经写明两条路的差异：
+
+| 渠道 | 特点 |
+| --- | --- |
+| `browser` | ChatGPT 网页版。不需要 API key，用网页额度；支持参考图/编辑；分钟级；依赖 Chrome 登录，可能被 Cloudflare 拦截；固定输出 PNG；有 ChatGPT 会话上下文 |
+| `sensenova` | SenseNova U1.5 图像 API。需要 `SENSENOVA_API_KEY`，**按张消耗积分**；同步数秒级；支持 1–5 张参考图编辑；尺寸 512–4096/2K/4K；输出 png/jpeg/webp；无 ChatGPT 对话上下文；稳定、可后台 |
+
+```text
+gpt_image prompt="雨夜霓虹街道，电影感" channel="browser"
+gpt_image prompt="把这张图改成水彩" ref=["cat.png"] channel="sensenova" size="2048x2048" format="webp"
+```
+
+- `browser`：`size` 只是写进 prompt 的提示；输出固定 PNG。
+- `sensenova`：`size` 会映射到接口支持的值（`auto`/`2K`/`4K`/`1:1`/`16:9`/`9:16`/`3:2`/`2:3`，或 512–4096 且为 32 倍数的 `WxH`）；`watermark` 默认 `false`（显式传给接口）；`model` 默认 `sensenova-u1.5-lite`，可换 `sensenova-u1.5-fast`。
+- 两者都支持 `background: true`。
+
+### API key：环境变量优先，凭据中心兜底
+
+读取顺序与 DSH 模型配置页面一致：
+
+1. 环境变量（`SENSENOVA_API_KEY` / `PIXMAX_BEARER_TOKEN`）——**优先，且一旦存在就拒绝写入凭据中心**；
+2. 否则读 DSH 凭据中心（`ctx.credentials`）。
+
+```text
+api_key service="sensenova" action="status"
+api_key service="sensenova" action="set" value="sk-..."
+api_key service="sensenova" action="clear"
+```
+
+- `status` 只返回是否配置、来源（`env`/`credentials`）和是否允许写入，不返回值。
+- 环境变量已设置时 `set` 会明确报错：“按优先级不会再写入凭据中心；如需在凭据中心管理，请先移除该环境变量。”
+- `clear` 只删凭据中心的值；环境变量仍然优先。
+- 代码和仓库里不保存任何 key；Pixmax 的 Bearer token 同样走这套（`PIXMAX_BEARER_TOKEN`），没有时回退 Pixmax CLI 自己的登录会话。
+
+### Pixmax：只读查询，不消耗积分
+
+`pixmax` 工具只暴露**零积分、只读**命令：
+
+```text
+pixmax action="doctor"
+pixmax action="session_status"
+pixmax action="project_list"
+pixmax action="canvas_summary"
+pixmax action="canvas_nodes" generated=true
+pixmax action="node_get" selector="<uuid>"
+pixmax action="model_search" query="pix" type="GENERATE_IMAGE"
+pixmax action="tasks_detail" selector="<task-uuid>"
+pixmax action="templates_list"
+```
+
+- 没有 generate / submit / upload / create / update / delete / run / raw，**工具无法花积分或改画布**。
+- 直接调用 `~/.pixmax-cli/runtime/current.json` 指向的 `entry.py`，绕过启动器的更新门禁（本机曾遇到运行时下载超时导致 `pixmax` 启动失败）。
+- 固定 `--json`；超时默认 120s、最大 600s；只读查询可并发。
+- 需要 `selector` 的 action 会明确报错；命令参数在工具内白名单构造，不接受裸参数透传。
+- 如果 CLI 未安装，工具会返回可读错误；README 不打包 CLI。
 
 ### 异步调用：`background: true`
 
@@ -237,16 +309,19 @@ gpt doctor
 ```
 .
 ├─ package.json          # dsh-shotflow bundle + CLI bin
-├─ cordis.patch.yml      # 根级 gpt-tools/video-tools（默认关）+ AI 视频工作流 preset
+├─ cordis.patch.yml      # 根级 gpt-tools/video-tools/pixmax-tools（默认关）+ AI 视频工作流 preset
 ├─ bin/
 │  ├─ gpt.mjs            # CLI
 │  └─ gpt.cmd            # Windows 启动器
 ├─ src/
-│  ├─ gpt-tools.mjs      # ChatGPT 工具注册
+│  ├─ gpt-tools.mjs      # ChatGPT / api_key 工具注册
+│  ├─ sensenova.mjs      # SenseNova 图像 API 渠道
+│  ├─ credentials.mjs    # 环境变量优先 / DSH 凭据中心兜底
 │  ├─ video-tools.mjs    # 视频工具注册
 │  ├─ ffmpeg.mjs         # ffmpeg 后端：探测/截帧/切点/拼图
+│  ├─ pixmax-tools.mjs   # Pixmax 只读工具（直接调 runtime entry.py）
 │  ├─ bridge.mjs         # DSH Browser Control HTTP 客户端
-│  ├─ chatgpt.mjs        # 网页驱动：ask / 续聊 / 生图
+│  ├─ chatgpt.mjs        # 网页驱动：ask / 续聊 / 生图 / 标签页复用
 │  ├─ job-runner.mjs     # background=true 的 DSH 后台 job 包装
 │  ├─ video-frames.mjs   # 无 ffmpeg 时的回环 HTTP + Chrome 解码 + canvas 截帧
 │  └─ store.mjs          # 路径、Markdown、last.json
@@ -258,15 +333,20 @@ gpt doctor
 
 ## 设计取舍
 
-- 网页驱动走 **DSH-Browser-Control 扩展 + 桥接**，和 DSH `browser_*` 工具共用同一条链路，不额外安装浏览器扩展。
+- 网页驱动走 **DSH-Browser-Control 扩展 + 桥接**，优先复用已打开的 chatgpt.com 标签页，避免新标签页被 Cloudflare 拦截；所有 gpt 调用串行。
+- 生图分渠道：`browser` 复用网页登录态，`sensenova` 走 API 并复用同一套 `background` / `api_key` / 保存逻辑。
 - 视频主后端是 **ffmpeg**：单遍滤镜、精确 seek、切点与总览图都更准更快；Chrome 回退只用于没有 ffmpeg 的应急场景。
+- Pixmax 只做**只读**工具，直接调当前 runtime 的 `entry.py`，不暴露任何生成/提交/写画布命令，因此不需要“零积分”人工约束。
 - 预设**只组合工具**：没有自定义 persona，不引用任何技能文件，也不绑定某个视频生成平台；生成环节由使用者自己的工具链完成。
 - 后台任务走 DSH `ctx.jobs`：结果与完成通知由 DSH 统一管理，插件不自己维护轮询进程。
 
 ## 已知限制
 
-- 同一扩展桥接一次只能串行驱动一个页面动作；不要并发调用 gpt 工具。
+- 同一扩展桥接一次只能串行驱动一个页面动作；gpt 工具在进程内串行执行。
+- gpt 默认复用已打开的 chatgpt.com 标签页：会在该标签页里点“新聊天”或打开指定会话，可能改变你当前的页面；没有找到标签页时才新开。
 - Free 套餐有生图额度；额度用尽会明确报错，不会静默挂起或保存错图。
+- `channel=sensenova` 会按张消耗 SenseNova 积分；需要 `SENSENOVA_API_KEY`；`watermark` 默认显式传 `false`，接口未来若调整默认值不受影响。输出尺寸受 512–4096、32 倍数、3:1 比例限制。
+- `api_key` 写入的是 DSH 凭据中心；环境变量存在时拒绝写入。`status` 不会返回值。
 - 面板窗口的「锁定」、只读/禁脚本策略由浏览器扩展控制；被拦住时命令会带可读错误返回。
 - 网页改版可能让选择器失效；`src/chatgpt.mjs` 里的 composer / send 选择器集中在一处，便于修。
 - 视频主后端是 ffmpeg：`ffmpegPath` 指向不存在的文件会明确报错；共享构建需要同目录 DLL 一起保留（spawn 时会把工作目录设为 ffmpeg 所在目录）。
@@ -275,6 +355,7 @@ gpt doctor
 - `video_frames` 单次最多 16 帧（`max_frames` 默认 12），超过上限会按时间均匀抽样；间隔语义会被改变。`width` 只缩小不放大；ffmpeg 后端的 `quality` 参数不生效（统一 `q:v 2`）。
 - 没有 ffmpeg 时 `video_probe`/`video_frames` 会回退 Chrome：Chrome 会冻结后台标签页，截帧期间标签页保持激活，且最好让 Chrome 窗口可见，否则 seek 可能变慢或超时；`video_scenes`/`video_sheet` 在回退模式下不可用。
 - 一次工具结果里附加太多图片会受 DSH attachment 的服务端限制（默认每消息 20 张）；建议单次 ≤12 帧，或先用 `video_sheet` 看整体。
+- `pixmax` 只读工具需要本机已安装并登录 Pixmax CLI；`tasks_wait` 可能长时间阻塞（默认 120s，可调到 600s）。工具不提供任何生成/提交/上传/写画布能力。
 
 ## 隐私
 

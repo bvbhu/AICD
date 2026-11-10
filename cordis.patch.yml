@@ -11,7 +11,13 @@
       disabled: true
       config:
         backend: auto
-        # ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
+        # ffmpegPath: 'D:/path/to/ffmpeg.exe'
+    - id: pixmax-tools
+      name: 'dsh-shotflow/pixmax'
+      disabled: true
+      config:
+        # pixmaxHome: '~/.pixmax-cli'
+        # environment: cn
 
 # AI video generation workflow preset: tools only. No persona and no extra
 # context files — just the ChatGPT web tools and the local ffmpeg video analysis
@@ -64,6 +70,7 @@
             config:
               bridgeUrl: 'http://127.0.0.1:9777'
               token: 'dsh-local'
+              reuseExistingTab: true
           # Local video tools: video_probe / video_frames / video_scenes / video_sheet
           - id: video-tools
             name: 'dsh-shotflow/video'
@@ -71,7 +78,13 @@
               bridgeUrl: 'http://127.0.0.1:9777'
               token: 'dsh-local'
               backend: auto
-              # ffmpegPath: 'D:/Program Files/FormatFactory/ffmpeg.exe'
+              # ffmpegPath: 'D:/path/to/ffmpeg.exe'
+          # Read-only Pixmax inspection (never spends credits or mutates a canvas)
+          - id: pixmax-tools
+            name: 'dsh-shotflow/pixmax'
+            config:
+              # pixmaxHome: '~/.pixmax-cli'
+              # environment: cn
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           - id: compaction
