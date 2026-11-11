@@ -1,7 +1,12 @@
-# Root-level tool rows: disabled by default so other presets do NOT get them by
+# Four independently switchable entries in this bundle:
+#   image-tools / video-tools / pixmax-tools  (root tool rows, off by default)
+#   preset-ai-video-workflow                 (the preset row below, on by default)
+# The three tool rows are off by default so other presets do NOT get them by
 # accident. Turn one on (DSH Settings → Plugins, or flip `disabled`) to expose it
 # to presets that do not declare the row themselves. The AI 视频工作流 preset
-# below carries its own enabled copies.
+# carries its own enabled copies, so its switch is independent of the root rows.
+# `pixmax-workflow-settings` is a default-on helper row (HTTP bridge + settings
+# card, no tools); it is not one of the four switchable components.
 - insert:
     # Image tools (model_list / image_generation).
     - id: image-tools
@@ -28,6 +33,7 @@
 # AI video generation workflow preset: tools only. No persona and no extra
 # context files — just the image tools, Pixmax credit-free operations, and the
 # local ffmpeg video analysis tools, so the agent prompt stays clean.
+# This preset row is itself independently switchable (enabled by default).
 - insert:
     - id: preset-ai-video-workflow
       name: '@deepseek-ai/dsh-agent-preset'

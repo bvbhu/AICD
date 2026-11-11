@@ -1,12 +1,13 @@
 # dsh-pixmax-workflow — DSH 插件：AI 视频生成工作流工具
 
-一个 DSH bundle：三个**子组件**各自独立成行、可分别开关，另附一个生图模型设置页与一个**只装工具**的预设。
+一个 DSH bundle：**四个可独立开关的条目**各自成行（`image-tools` / `video-tools` / `pixmax-tools` / `preset-ai-video-workflow` 预设），另附一个默认启用、不注册工具的设置页辅助行。
 
-1. **图像工具**（`image-tools`）— `model_list`（生图模型列表与 key 状态）与 `image_generation`（生图/改图，按 **模型 id** 选渠道）；支持 `background: true` 后台生成，不阻塞对话。
-2. **视频解析工具**（`video-tools`）— `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（镜头切点）、`video_sheet`（总览图）。默认走 ffmpeg，没有 ffmpeg 时探测/截帧回退 Chrome；帧和总览图会作为图片附加到当前会话。
-3. **Pixmax 工具**（`pixmax-tools`）— `pixmax` 覆盖 CLI 里**所有不消耗积分的操作**（读取 + 免费写入），并硬性拦截一切提交型参数与裸提交命令；还能把 CLI 自带的 skill 装进 DSH 技能目录。
-4. **生图模型设置页**（`pixmax-workflow-settings`，默认启用）— 在 **Settings → 插件 → Pixmax Workflow** 里管理「生图专用模型」：浏览器渠道固定为 `browser/gpt-image-2`，其他 OpenAI 兼容端点按 `provider/modelid` 添加；每个模型的 API key 在这里写入 DSH 凭据中心，**不再有管理密钥的工具**。
-5. **「AI 视频工作流」预设** — 只组合上面这些工具与基础文件/命令/任务能力，不带自定义 persona、不绑定任何具体视频生成平台、不依赖任何技能文件。
+1. **图像工具**（`image-tools`，可独立开关，默认关）— `model_list`（生图模型列表与 key 状态）与 `image_generation`（生图/改图，按 **模型 id** 选渠道）；支持 `background: true` 后台生成，不阻塞对话。
+2. **视频解析工具**（`video-tools`，可独立开关，默认关）— `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（镜头切点）、`video_sheet`（总览图）。默认走 ffmpeg，没有 ffmpeg 时探测/截帧回退 Chrome；帧和总览图会作为图片附加到当前会话。
+3. **Pixmax 工具**（`pixmax-tools`，可独立开关，默认关）— `pixmax` 覆盖 CLI 里**所有不消耗积分的操作**（读取 + 免费写入），并硬性拦截一切提交型参数与裸提交命令；还能把 CLI 自带的 skill 装进 DSH 技能目录。参数不合法时返回信息会提示模型查阅 `pixmax-cli` 技能，CLI 未安装时返回完整的安装/登录/配置步骤。
+4. **「AI 视频工作流」预设**（`preset-ai-video-workflow`，可独立开关，默认开）— 只组合上面这些工具与基础文件/命令/任务能力，不带自定义 persona、不绑定任何具体视频生成平台、不依赖任何技能文件。
+
+**辅助行**：生图模型设置页（`pixmax-workflow-settings`，默认启用）— 在 **Settings → 插件 → Pixmax Workflow** 里管理「生图专用模型」：浏览器渠道固定为 `browser/gpt-image-2`，其他 OpenAI 兼容端点按 `provider/modelid` 添加；每个模型的 API key 在这里写入 DSH 凭据中心，**不再有管理密钥的工具**。它不注册任何工具，只提供 HTTP 桥与插件页卡片；预设内部也会引用它，不属于上面四个可独立开关的条目。
 
 不绑定固定平台：生成环节用你自己的工具链；dsh-pixmax-workflow 只负责生图与本地视频解析。
 
@@ -85,13 +86,15 @@ DSH attachments 服务 → 图片块附加到当前会话
 
 ## 安装
 
+从 GitHub 安装到桌面版 profile（推荐）：
+
 ```powershell
-dsh plugin --profile <profile> add link:<repo>
-# 然后把 "dsh-pixmax-workflow" 加入 dsh.profile.bundles（dsh plugin add 通常会自动加）
+dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow
+# 然后把 "dsh-pixmax-workflow" 加入 desktop/package.json 的 dsh.profile.bundles（若命令未自动加）
 # 重启 DSH 后生效
 ```
 
-桌面版 profile 由 Electron 应用管理；如果 CLI 安装被拒，用 DSH 的插件页/插件管理器安装同一个本地目录或打好的压缩包。
+本地开发时也可以链接目录：`dsh plugin --profile <profile> add link:D:/projects/dsh-pixmax-workflow`。桌面版 profile 由 Electron 应用管理；如果 CLI 安装被拒，用 DSH 的插件页/插件管理器安装同一个本地目录或打好的压缩包。
 
 安装后：
 
@@ -102,7 +105,7 @@ dsh plugin --profile <profile> add link:<repo>
 
 ### 其他预设：手动启用工具
 
-三个子组件 `image-tools` / `video-tools` / `pixmax-tools` 在根级各自独立成行、默认关闭，**可以分别单独启用**（在 DSH 的插件/设置界面开关，或写进目标预设的 `plugins` 列表）：
+三个工具条目 `image-tools` / `video-tools` / `pixmax-tools` 在根级各自独立成行、默认关闭，**可以分别单独启用**（在 DSH 的插件/设置界面开关，或写进目标预设的 `plugins` 列表）；`preset-ai-video-workflow` 预设也是一个可独立开关的条目（默认开），四个条目的开关互不影响。三个工具行的写法：
 
 ```yaml
 - id: image-tools
@@ -219,8 +222,8 @@ pixmax command=["node","create","EP2-1组","--type","GENERATE_VIDEO","--prompt",
 - 规划类命令（create/update/image/video/storyboard/script/workflow run）默认带 `--dry-run`，只有显式 `dry_run: false` 才真正落盘——落盘也是免费写入，不会提交生成。
 - 直接调用 `~/.pixmax-cli/runtime/current.json` 指向的 `entry.py`，绕过启动器的更新门禁（本机曾遇到运行时下载超时导致 `pixmax` 启动失败）。
 - 固定 `--json`；超时默认 120s、最大 600s；命令可并发。
-- 需要 `selector` / `items` / `prompt` 的 action 会明确报错。
-- 如果 CLI 未安装，工具会返回可读错误；README 不打包 CLI。
+- 需要 `selector` / `items` / `prompt` 的 action 会明确报错；**任何参数/用法错误**（缺参、未知 action、非法 flag、被拦截的提交命令，以及 CLI 自己报的 argparse 错误）都会在返回的 `hint` 里提示模型先查阅 `pixmax-cli` 技能，不要重复猜参数。
+- **CLI 未找到 / 无法启动**时（主目录不存在、安装不完整、spawn 失败、launcher 不在 PATH），返回的 `hint` 会给出完整的安装 → 登录 → 环境变量 → 验证步骤；README 不打包 CLI。
 - `action="skill_install"` 把 CLI 自带的 skill 装进 DSH skills 目录（见下文）。
 
 ### Pixmax CLI 的 skill：怎么用上
@@ -378,7 +381,7 @@ out        输出路径；默认 <root>/video-frames/<视频名>-sheet-<时间>.
 ```
 .
 ├─ package.json          # dsh-pixmax-workflow bundle + dsh.client（插件页卡片）
-├─ cordis.patch.yml      # 根级 image-tools / video-tools / pixmax-tools（默认关，独立开关）+ pixmax-workflow-settings（默认开）+ 预设
+├─ cordis.patch.yml      # 四个可独立开关的条目：image-tools / video-tools / pixmax-tools（默认关）+ preset-ai-video-workflow 预设（默认开）；另有 pixmax-workflow-settings 辅助行（默认开，不注册工具）
 ├─ client/
 │  └─ pixmax-workflow-settings.js  # 插件页里的生图模型设置卡片（无需构建）
 ├─ locale/               # en/zh.json：插件名与描述
