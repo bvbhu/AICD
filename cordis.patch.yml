@@ -3,26 +3,18 @@
 # to presets that do not declare the row themselves. The AI 视频工作流 preset
 # below carries its own enabled copies.
 - insert:
-    # ChatGPT web conversation tools (gpt_ask / gpt_last).
-    - id: gpt-chat
-      name: 'dsh-shotflow'
-      disabled: true
-      config:
-        # bridgeUrl: 'http://127.0.0.1:9777'
-        # token: 'dsh-local'
-        reuseExistingTab: true
     # Image tools (model_list / image_generation).
     - id: image-tools
-      name: 'dsh-shotflow/image'
+      name: 'dsh-pixmax-workflow/image'
       disabled: true
     - id: video-tools
-      name: 'dsh-shotflow/video'
+      name: 'dsh-pixmax-workflow/video'
       disabled: true
       config:
         backend: auto
         # ffmpegPath: 'D:/path/to/ffmpeg.exe'
     - id: pixmax-tools
-      name: 'dsh-shotflow/pixmax'
+      name: 'dsh-pixmax-workflow/pixmax'
       disabled: true
       config:
         # pixmaxHome: '~/.pixmax-cli'
@@ -30,19 +22,19 @@
     # Settings page for the 生图模型列表 (host JSON bridge + browser card).
     # Enabled by default: it registers no tools and spends nothing — it only
     # reads/writes <root>/settings.json and the DSH credential center.
-    - id: shotflow-settings
-      name: 'dsh-shotflow/settings'
+    - id: pixmax-workflow-settings
+      name: 'dsh-pixmax-workflow/settings'
 
 # AI video generation workflow preset: tools only. No persona and no extra
-# context files — just the ChatGPT web tools and the local ffmpeg video analysis
-# tools, so the agent prompt stays clean.
+# context files — just the image tools, Pixmax credit-free operations, and the
+# local ffmpeg video analysis tools, so the agent prompt stays clean.
 - insert:
     - id: preset-ai-video-workflow
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: ai-video-workflow
         name: AI 视频工作流
-        description: 'AI 视频生成工作流工具集：ChatGPT 网页对话/生图 + ffmpeg 视频解析（探测、截帧、切点、总览图）。'
+        description: 'AI 视频生成工作流工具集：生图（模型列表 + 生成/改图）+ 零积分 Pixmax 操作 + ffmpeg 视频解析（探测、截帧、切点、总览图）。'
         order: 20
         plugins:
           - id: agent-instructions
@@ -79,25 +71,18 @@
               fetch: true
               searchTimeoutMs: 60000
           # Image-model settings page: model list + API keys (no tools)
-          - id: shotflow-settings
-            name: 'dsh-shotflow/settings'
-          # ChatGPT web conversation tools: gpt_ask / gpt_last
-          - id: gpt-chat
-            name: 'dsh-shotflow'
-            config:
-              bridgeUrl: 'http://127.0.0.1:9777'
-              token: 'dsh-local'
-              reuseExistingTab: true
+          - id: pixmax-workflow-settings
+            name: 'dsh-pixmax-workflow/settings'
           # Image tools: model_list / image_generation
           - id: image-tools
-            name: 'dsh-shotflow/image'
+            name: 'dsh-pixmax-workflow/image'
             config:
               bridgeUrl: 'http://127.0.0.1:9777'
               token: 'dsh-local'
               reuseExistingTab: true
           # Local video tools: video_probe / video_frames / video_scenes / video_sheet
           - id: video-tools
-            name: 'dsh-shotflow/video'
+            name: 'dsh-pixmax-workflow/video'
             config:
               bridgeUrl: 'http://127.0.0.1:9777'
               token: 'dsh-local'
@@ -105,7 +90,7 @@
               # ffmpegPath: 'D:/path/to/ffmpeg.exe'
           # Pixmax: every credit-free operation (submits are blocked by the tool)
           - id: pixmax-tools
-            name: 'dsh-shotflow/pixmax'
+            name: 'dsh-pixmax-workflow/pixmax'
             config:
               # pixmaxHome: '~/.pixmax-cli'
               # environment: cn

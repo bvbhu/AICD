@@ -1,13 +1,13 @@
 /**
- * Host half of the ShotFlow settings page.
+ * Host half of the dsh-pixmax-workflow settings page.
  *
- * The browser card (`client/shotflow-settings.js`) reads and writes through the
+ * The browser card (`client/pixmax-workflow-settings.js`) reads and writes through the
  * small JSON bridge registered here — the same pattern the DSH plugin pages use:
  *
- *   GET  /api/dsh-shotflow/state   → builtins + user models + default + key status
- *   POST /api/dsh-shotflow/save    → save the model list / default model
- *   POST /api/dsh-shotflow/key     → status | set | clear one model's API key
- *   GET  /api/dsh-shotflow/health  → liveness and the settings file path
+ *   GET  /api/dsh-pixmax-workflow/state   → builtins + user models + default + key status
+ *   POST /api/dsh-pixmax-workflow/save    → save the model list / default model
+ *   POST /api/dsh-pixmax-workflow/key     → status | set | clear one model's API key
+ *   GET  /api/dsh-pixmax-workflow/health  → liveness and the settings file path
  *
  * Model definitions live in `<root>/settings.json`; API keys live in the DSH
  * credential center (environment variables still win). Nothing here spends
@@ -26,10 +26,10 @@ import {
 } from './image-models.mjs'
 import { defaultPluginRoot } from './store.mjs'
 
-export const name = 'dsh-shotflow-settings'
+export const name = 'dsh-pixmax-workflow-settings'
 export const inject = ['webServer']
 
-const PREFIX = '/api/dsh-shotflow'
+const PREFIX = '/api/dsh-pixmax-workflow'
 const MAX_BODY = 256 * 1024
 
 function writeJson(res, status, body) {
@@ -217,7 +217,7 @@ export function apply(ctx, config = {}) {
           } catch {}
         }
       }
-    }, 'shotflow: settings bridge')
+    }, 'pixmax-workflow: settings bridge')
   })
-  ctx.logger?.info?.(`[dsh-shotflow-settings] settings bridge registered under ${PREFIX}`)
+  ctx.logger?.info?.(`[dsh-pixmax-workflow-settings] settings bridge registered under ${PREFIX}`)
 }

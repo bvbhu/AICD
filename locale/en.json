@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "ShotFlow",
-    "description": "ChatGPT web tools, image tools (model_list + image_generation), ffmpeg video analysis and credit-free Pixmax operations."
+    "title": "dsh-pixmax-workflow",
+    "description": "Image tools (model_list + image_generation), ffmpeg video analysis and credit-free Pixmax CLI operations."
   },
   "settings": {
     "title": "Image models",

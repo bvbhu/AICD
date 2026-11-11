@@ -19,13 +19,13 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { resolveSecret } from './credentials.mjs'
 
-export const name = 'dsh-shotflow-pixmax'
+export const name = 'dsh-pixmax-workflow-pixmax'
 export const inject = ['tools']
 
 const str = (description) => ({ type: 'string', description })
@@ -427,6 +427,67 @@ export function guardArgv(argv) {
   return tokens
 }
 
+/**
+ * Copy the CLI's own skill (SKILL.md + references + docs) from a CLI app root into
+ * a DSH skills directory. Exported so it can be exercised without spawning Python.
+ */
+export function copySkillInto(cliRoot, targetDir) {
+  const resolvedRoot = String(cliRoot || '').trim()
+  if (!resolvedRoot || !existsSync(resolvedRoot)) throw new Error('Pixmax CLI 没有报告 skill 源目录（root）')
+  mkdirSync(targetDir, { recursive: true })
+  const copied = []
+  const copyTree = (fromRel, toRel) => {
+    const from = join(resolvedRoot, fromRel)
+    const to = join(targetDir, toRel)
+    if (!existsSync(from)) return
+    if (statSync(from).isDirectory()) {
+      mkdirSync(to, { recursive: true })
+      for (const entry of readdirSync(from, { withFileTypes: true })) {
+        copyTree(join(fromRel, entry.name).replace(/\\/g, '/'), join(toRel, entry.name).replace(/\\/g, '/'))
+      }
+      return
+    }
+    mkdirSync(to.replace(/[\\/][^\\/]*$/, ''), { recursive: true })
+    copyFileSync(from, to)
+    copied.push(to.replace(/\\/g, '/'))
+  }
+
+  copyTree('pixmax/skills/SKILL.md', 'SKILL.md')
+  copyTree('pixmax/skills/references', 'references')
+  copyTree('pixmax/README.md', 'README.md')
+  copyTree('PIXMAX.md', 'PIXMAX.md')
+  if (copied.length === 0) throw new Error(`没有复制到任何文件（源目录 ${resolvedRoot}）`)
+  return { targetDir, copied }
+}
+
+/** `action=skill_install` implementation: locate the CLI root, then copy. */
+async function installSkill(ctx, config, args) {
+  const skillName = String(args.name || 'pixmax-cli').trim()
+  if (!/^[A-Za-z0-9._-]+$/.test(skillName)) throw new Error(`skill 目录名不合法: ${skillName}`)
+  const skillsRoot = resolve(args.out || join(homedir(), '.dsh', 'skills'))
+  const filesResult = await runPixmax(ctx, config, ['skill', 'files'], args.timeout)
+  if (!filesResult.ok) throw new Error(`无法读到 Pixmax CLI 的 skill 清单: ${filesResult.text || filesResult.stderr || filesResult.json}`)
+  const listing = parseJson(filesResult.json)
+  const cliRoot = String(listing?.root || '').trim()
+  const targetDir = join(skillsRoot, skillName)
+  const { copied } = copySkillInto(cliRoot, targetDir)
+  return {
+    ok: true,
+    exitCode: 0,
+    timedOut: false,
+    ms: filesResult.ms,
+    source: filesResult.source,
+    json: JSON.stringify({
+      ok: true,
+      skillDir: targetDir,
+      files: copied.map((path) => path.slice(targetDir.length + 1).replace(/\\/g, '/')),
+    }),
+    text: '',
+    stderr: '',
+    argv: ['skill', 'install', '→ ' + targetDir],
+  }
+}
+
 async function runPixmax(ctx, config, argv, timeoutSec) {
   const tokens = guardArgv(argv)
   const resolved = resolvePixmax(config)
@@ -473,9 +534,10 @@ export function apply(ctx, config = {}) {
     name: 'pixmax',
     description:
       '调用 Pixmax CLI 的**全部不消耗积分操作**：读取（doctor/登录/项目/画布/节点/模型/任务/模板/工作流/skill）与免费写入（节点 create/update/delete/batch、canvas 原生增删改、资产上传下载/合规、项目文件增删改移、script/storyboard 节点创建）。' +
-      '两种用法：① action 简写（doctor | session_status | auth_whoami | auth_credit | project_list | project_files | canvas_get | canvas_summary | canvas_nodes | node_get | node_list | node_create | node_update | node_delete | node_batch | model_search | model_get | image_generate | video_image_to_video | storyboard_create | script_create | script_rows | tasks_list | tasks_wait | assets_upload | assets_download | templates_list | workflow_list | group_list | update_status …）；' +
+      '两种用法：① action 简写（doctor | session_status | auth_whoami | auth_credit | project_list | project_files | canvas_get | canvas_summary | canvas_nodes | node_get | node_list | node_create | node_update | node_delete | node_batch | model_search | model_get | image_generate | video_image_to_video | storyboard_create | script_create | script_rows | tasks_list | tasks_wait | assets_upload | assets_download | templates_list | workflow_list | group_list | skill_install | update_status …）；' +
       '② command 数组直接给 argv，例如 ["node","create","EP2-1组","--type","GENERATE_VIDEO"]。' +
       '工具会拦截一切提交型参数（--run/--submit/--execute/--live）、裸提交命令（tasks submit-batch 等）与非 GET 的 raw；创建/修改节点、规划类命令默认带 --dry-run（dry_run=false 才是真正的免费写入）。' +
+      'skill_install 把 CLI 自带的 skill（SKILL.md + references + README/PIXMAX）复制进 DSH skills 目录，装好即可被技能目录发现。' +
       '需要 selector/items/prompt 的 action 会明确报错；命令固定加 --json。',
     parameters: {
       type: 'object',
@@ -513,7 +575,8 @@ export function apply(ctx, config = {}) {
         name: str('项目文件/目录名'),
         parent: str('项目文件移动的目标目录'),
         group: str('本地节点组名'),
-        out: str('输出路径（assets_download / canvas_export / skill_package）'),
+        out: str('输出路径（assets_download / canvas_export / skill_package）；skill_install 时是 DSH skills 根目录，默认 ~/.dsh/skills'),
+        name: str('skill_install 的 skill 目录名（默认 pixmax-cli，需与 SKILL.md 的 name 一致）'),
         asset_type: str('资产类型（IMG/VIDEO/AUDIO，默认 IMG）'),
         as_node: str('上传后创建 BASE_* 节点的显示名'),
         kind: str('assets_download 的 kind：web | preview | thumbnail'),
@@ -566,6 +629,10 @@ export function apply(ctx, config = {}) {
       let action = String(args.action || '')
       let argv
       try {
+        if (action === 'skill_install') {
+          const result = await installSkill(ctx, config, args)
+          return { status: 'completed', action, ...result }
+        }
         if (Array.isArray(args.command) && args.command.length > 0) {
           argv = args.command
         } else if (action) {
@@ -600,5 +667,5 @@ export function apply(ctx, config = {}) {
     },
   })
 
-  ctx.logger?.info?.(`[dsh-shotflow-pixmax] credit-free pixmax tool registered (home ${resolvePixmax(config).home})`)
+  ctx.logger?.info?.(`[dsh-pixmax-workflow-pixmax] credit-free pixmax tool registered (home ${resolvePixmax(config).home})`)
 }

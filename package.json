@@ -1,12 +1,11 @@
 {
-  "name": "dsh-shotflow",
+  "name": "dsh-pixmax-workflow",
   "version": "0.3.0",
-  "description": "DSH plugin bundle for AI video generation workflows: ChatGPT web tools, image tools (model_list + image_generation), ffmpeg video analysis, and credit-free Pixmax operations",
+  "description": "DSH plugin bundle for AI video generation workflows: image tools (model_list + image_generation), settings page, ffmpeg video analysis, and credit-free Pixmax CLI operations",
   "type": "module",
-  "main": "./src/chat-tools.mjs",
+  "main": "./src/image-tools.mjs",
   "exports": {
-    ".": "./src/chat-tools.mjs",
-    "./chat": "./src/chat-tools.mjs",
+    ".": "./src/image-tools.mjs",
     "./image": "./src/image-tools.mjs",
     "./video": "./src/video-tools.mjs",
     "./bridge": "./src/bridge.mjs",
@@ -21,17 +20,13 @@
     "./sensenova": "./src/sensenova.mjs",
     "./video-frames": "./src/video-frames.mjs",
     "./store": "./src/store.mjs",
-    "./client": "./client/shotflow-settings.js",
+    "./client": "./client/pixmax-workflow-settings.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
-  "bin": {
-    "gpt": "./bin/gpt.mjs"
-  },
   "files": [
-    "bin/",
     "src/",
     "client/",
     "locale/",

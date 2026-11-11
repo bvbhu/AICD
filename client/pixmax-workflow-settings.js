@@ -1,5 +1,5 @@
 /**
- * Browser half of the ShotFlow settings page.
+ * Browser half of the dsh-pixmax-workflow settings page.
  *
  * Registers one card into the Plugins page's row/bundle "config" slots and talks
  * to the host bridge in `src/settings-host.mjs`:
@@ -12,13 +12,13 @@
  * No build step: this file is loaded as-is by the client module loader.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-shotflow',
+  id: 'dsh-pixmax-workflow',
   factory(require) {
     const React = require('react')
     const h = React.createElement
 
-    const PREFIX = '/api/dsh-shotflow'
-    const CARD_ID = 'shotflow-settings'
+    const PREFIX = '/api/dsh-pixmax-workflow'
+    const CARD_ID = 'pixmax-workflow-settings'
 
     async function call(path, init) {
       const response = await fetch(PREFIX + path, {
@@ -109,7 +109,7 @@ window.__ModuleLoader__.load({
       return h('span', { style: { ...styles.badge, ...styles.error } }, 'key: 未配置')
     }
 
-    function ShotFlowCard() {
+    function PixmaxWorkflowCard() {
       const [view, setView] = React.useState(null)
       const [draft, setDraft] = React.useState(null)
       const [error, setError] = React.useState('')
@@ -230,7 +230,7 @@ window.__ModuleLoader__.load({
             { style: styles.boxHead },
             h('input', {
               type: 'radio',
-              name: 'shotflow-default-model',
+              name: 'pixmax-workflow-default-model',
               checked: draft.defaultModel === builtin.id,
               disabled: off,
               onChange: () => setDraft({ ...draft, defaultModel: builtin.id }),
@@ -275,7 +275,7 @@ window.__ModuleLoader__.load({
             { style: styles.boxHead },
             h('input', {
               type: 'radio',
-              name: 'shotflow-default-model',
+              name: 'pixmax-workflow-default-model',
               checked: draft.defaultModel === model.id,
               onChange: () => setDraft({ ...draft, defaultModel: model.id }),
             }),
@@ -445,14 +445,14 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         ctx.slots.inject('plugins.row.config', () =>
           ctx.slots.register(
-            { name: 'plugins.row.config', key: 'dsh-shotflow#image-tools' },
-            (slotProps) => (slotProps && slotProps.view === 'summary' ? summaryText() : h(ShotFlowCard, null)),
+            { name: 'plugins.row.config', key: 'dsh-pixmax-workflow#image-tools' },
+            (slotProps) => (slotProps && slotProps.view === 'summary' ? summaryText() : h(PixmaxWorkflowCard, null)),
           ),
         )
         ctx.slots.inject('plugins.bundle.config', () =>
           ctx.slots.register(
-            { name: 'plugins.bundle.config', key: 'dsh-shotflow' },
-            (slotProps) => (slotProps && slotProps.view === 'summary' ? summaryText() : h(ShotFlowCard, null)),
+            { name: 'plugins.bundle.config', key: 'dsh-pixmax-workflow' },
+            (slotProps) => (slotProps && slotProps.view === 'summary' ? summaryText() : h(PixmaxWorkflowCard, null)),
           ),
         )
       },

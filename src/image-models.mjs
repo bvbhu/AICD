@@ -1,5 +1,5 @@
 /**
- * Image model registry + user settings for the ShotFlow image tools.
+ * Image model registry + user settings for the dsh-pixmax-workflow image tools.
  *
  * The 生图模型列表 lives in one JSON file next to the tool outputs
  * (`<root>/settings.json`), so the settings page can edit it without touching
@@ -170,7 +170,7 @@ export function resolveImageModel(settings, requested) {
   if (byModelCode) return { model: byModelCode, models }
   throw new Error(
     `未知的生图模型 ${JSON.stringify(text || '(未指定)')}。可用的模型：${models.map((model) => model.id).join(', ') || '(空)'}。` +
-      '用 model_list 查看，或在 Settings → 插件 → ShotFlow 里新增。',
+      '用 model_list 查看，或在 Settings → 插件 → dsh-pixmax-workflow 里新增。',
   )
 }
 

@@ -2,7 +2,7 @@
  * SenseNova U1.5 image backend — compatibility wrapper.
  *
  * The real work moved to `image-api.mjs`, which serves every OpenAI-Images-style
- * model configured in the ShotFlow settings page (SenseNova is one of them).
+ * model configured in the Pixmax Workflow settings page (SenseNova is one of them).
  * This module keeps the historical export names so older call sites and the
  * package's `./sensenova` export keep working.
  *

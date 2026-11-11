@@ -189,7 +189,7 @@ export async function generateWithProvider({
   signal,
   label = '生图',
 }) {
-  if (!apiKey) throw new ImageApiError(`缺少 API key：在 Settings → 插件 → ShotFlow 里为该模型填入，或设置环境变量`, 'no_key')
+  if (!apiKey) throw new ImageApiError(`缺少 API key：在 Settings → 插件 → Pixmax Workflow 里为该模型填入，或设置环境变量`, 'no_key')
   if (!prompt?.trim()) throw new ImageApiError('prompt 为空', 'invalid_prompt')
   if (refs.length > 5) throw new ImageApiError('最多 5 张参考图', 'too_many_refs')
   for (const ref of refs) if (!existsSync(ref)) throw new ImageApiError(`参考图不存在: ${ref}`, 'missing_ref')

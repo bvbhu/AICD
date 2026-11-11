@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "ShotFlow",
-    "description": "ChatGPT 网页工具、图像工具（model_list + image_generation）、ffmpeg 视频解析与零积分 Pixmax 操作。"
+    "title": "dsh-pixmax-workflow",
+    "description": "图像工具（model_list + image_generation）、ffmpeg 视频解析与零积分 Pixmax CLI 操作。"
   },
   "settings": {
     "title": "生图模型",

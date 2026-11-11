@@ -90,7 +90,7 @@ function credentialNameFor(provider) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
-  return `SHOTFLOW_IMAGE_${slug || 'PROVIDER'}_API_KEY`
+  return `PIXMAX_WORKFLOW_IMAGE_${slug || 'PROVIDER'}_API_KEY`
 }
 
 /** Resolve the environment variable and credential record names of one model. */

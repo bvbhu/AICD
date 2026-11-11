@@ -4,7 +4,7 @@
  * `image_generation` takes a **model id** chosen by the model itself or the
  * user's default: `browser/gpt-image-2` routes to the ChatGPT web page, any
  * other `provider/modelid` routes to an OpenAI-Images-compatible endpoint
- * configured in the ShotFlow settings page. API keys are never tool arguments:
+ * configured in the Pixmax Workflow settings page. API keys are never tool arguments:
  * they are read from an environment variable or the DSH credential center, and
  * the settings page is the only place that writes them.
  *
@@ -23,7 +23,7 @@ import { BROWSER_MODEL_ID, describeModel, effectiveModels, loadImageSettings, re
 import { startBackgroundJob } from './job-runner.mjs'
 import { Store, defaultPluginRoot, nowIso, nowStamp, slugify } from './store.mjs'
 
-export const name = 'dsh-shotflow-image'
+export const name = 'dsh-pixmax-workflow-image'
 export const inject = ['tools']
 
 const str = (description) => ({ type: 'string', description })
@@ -119,7 +119,7 @@ async function runModelImage({ ctx, prepared, signal, progress }) {
   if (!key.value) {
     const where = key.envKey ? `环境变量 ${key.envKey}` : '环境变量'
     throw new Error(
-      `模型 ${model.id} 缺少 API key：在 Settings → 插件 → ShotFlow 里给它填一个（会写入 DSH 凭据中心 ${key.credentialName}），` +
+      `模型 ${model.id} 缺少 API key：在 Settings → 插件 → Pixmax Workflow 里给它填一个（会写入 DSH 凭据中心 ${key.credentialName}），` +
         `或设置${where}（环境变量优先，设置后设置页不再写入）。`,
     )
   }
@@ -180,7 +180,7 @@ export function apply(ctx, config = {}) {
     description:
       '图像生成 / Image Generation：生成或编辑图片。用 model 选模型（provider/model）：browser/gpt-image-2 = ChatGPT 网页版（默认；走已登录 Chrome，不消耗 API 额度，支持参考图/改图，分钟级，可能被 Cloudflare 拦，固定 PNG）；' +
       '其他 openai 兼容端点写 provider/modelid（例如 sensenova/sensenova-u1.5-lite，按张计费、秒级、支持 1-5 张参考图、输出 png/jpeg/webp）。' +
-      '可用模型与各自是否已配 key 见 model_list；API key 在 Settings → 插件 → ShotFlow 里配置，不是工具参数。支持 background=true。',
+      '可用模型与各自是否已配 key 见 model_list；API key 在 Settings → 插件 → Pixmax Workflow 里配置，不是工具参数。支持 background=true。',
     parameters: {
       type: 'object',
       properties: IMAGE_PARAMS,
@@ -258,7 +258,7 @@ export function apply(ctx, config = {}) {
     description:
       '列出生图模型：每个模型的 id（provider/model）、类型（browser = ChatGPT 网页，openai = OpenAI 兼容端点）、端点地址、' +
       '是否为内置模型、是否已配 API key（只看是否存在与来源，不返回值），以及当前默认模型。' +
-      'image_generation 的 model 参数取这里的 id；模型与 key 在 Settings → 插件 → ShotFlow 里增删改。',
+      'image_generation 的 model 参数取这里的 id；模型与 key 在 Settings → 插件 → Pixmax Workflow 里增删改。',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: {
       schema: {
@@ -314,6 +314,6 @@ export function apply(ctx, config = {}) {
   })
 
   ctx.logger?.info?.(
-    `[dsh-shotflow-image] image_generation/model_list registered (bridge ${runtime.bridge.url}, root ${runtime.root}; models: ${effectiveModels(loadImageSettings(runtime.root)).map((model) => model.id).join(', ')})`,
+    `[dsh-pixmax-workflow-image] image_generation/model_list registered (bridge ${runtime.bridge.url}, root ${runtime.root}; models: ${effectiveModels(loadImageSettings(runtime.root)).map((model) => model.id).join(', ')})`,
   )
 }
