@@ -170,7 +170,7 @@ export function resolveImageModel(settings, requested) {
   if (byModelCode) return { model: byModelCode, models }
   throw new Error(
     `未知的生图模型 ${JSON.stringify(text || '(未指定)')}。可用的模型：${models.map((model) => model.id).join(', ') || '(空)'}。` +
-      '用 image_model_list 查看，或在 Settings → 插件 → ShotFlow 里新增。',
+      '用 model_list 查看，或在 Settings → 插件 → ShotFlow 里新增。',
   )
 }
 

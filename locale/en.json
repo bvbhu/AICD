@@ -1,10 +1,10 @@
 {
   "meta": {
     "title": "ShotFlow",
-    "description": "ChatGPT web tools, image-model settings, ffmpeg video analysis and credit-free Pixmax operations."
+    "description": "ChatGPT web tools, image tools (model_list + image_generation), ffmpeg video analysis and credit-free Pixmax operations."
   },
   "settings": {
     "title": "Image models",
-    "hint": "Models used by gpt_image; API keys live in the DSH credential center."
+    "hint": "Models used by image_generation; API keys live in the DSH credential center."
   }
 }

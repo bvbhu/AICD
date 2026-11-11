@@ -334,7 +334,7 @@ window.__ModuleLoader__.load({
           'div',
           { style: styles.head },
           h('span', { style: styles.title }, '生图模型'),
-          h('span', { style: styles.hint }, 'gpt_image 的 model 参数取这里的 id；不传就用默认模型。'),
+          h('span', { style: styles.hint }, 'image_generation 的 model 参数取这里的 id；不传就用默认模型。'),
         ),
         h(
           'div',
@@ -445,7 +445,7 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         ctx.slots.inject('plugins.row.config', () =>
           ctx.slots.register(
-            { name: 'plugins.row.config', key: 'dsh-shotflow#gpt-tools' },
+            { name: 'plugins.row.config', key: 'dsh-shotflow#image-tools' },
             (slotProps) => (slotProps && slotProps.view === 'summary' ? summaryText() : h(ShotFlowCard, null)),
           ),
         )

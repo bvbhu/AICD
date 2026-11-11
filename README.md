@@ -2,7 +2,7 @@
 
 一个 DSH bundle，提供 AI 视频生成工作流里最常用的工具、一个生图模型设置页，以及一个**只装工具**的预设：
 
-1. **ChatGPT 网页工具** — `gpt_ask`（对话→Markdown）、`gpt_image`（生图/改图，按 **模型 id** 选渠道）、`gpt_last`（最近会话 id）、`image_model_list`（生图模型列表与 key 状态），另带 `gpt` CLI；`gpt_ask` / `gpt_image` 支持后台执行，生成期间不阻塞对话。
+1. **ChatGPT 网页工具** — `gpt_ask`（对话→Markdown）、`gpt_last`（最近会话 id），另带 `gpt` CLI；`gpt_ask` 支持后台执行，生成期间不阻塞对话。
 2. **生图模型设置页** — 在 **Settings → 插件 → ShotFlow** 里管理「生图专用模型」：浏览器渠道固定为 `browser/gpt-image-2`，其他 OpenAI 兼容端点按 `provider/modelid` 添加；每个模型的 API key 在这里写入 DSH 凭据中心，**不再有管理密钥的工具**。
 3. **视频解析工具** — `video_probe`（时长/分辨率/帧率）、`video_frames`（按间隔/时间点/帧号截帧）、`video_scenes`（镜头切点）、`video_sheet`（总览图）。默认走 ffmpeg，没有 ffmpeg 时探测/截帧回退 Chrome；帧和总览图会作为图片附加到当前会话。
 4. **Pixmax 工具** — `pixmax` 覆盖 CLI 里**所有不消耗积分的操作**（读取 + 免费写入），并硬性拦截一切提交型参数与裸提交命令。
@@ -18,7 +18,8 @@
 
 | 部分 | 内容 |
 | --- | --- |
-| gpt 工具 | `src/gpt-tools.mjs` → `gpt_ask` / `gpt_image` / `gpt_last` / `image_model_list`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
+| ChatGPT 工具 | `src/chat-tools.mjs` → `gpt_ask` / `gpt_last`；`src/bridge.mjs` 是浏览器桥客户端，`src/chatgpt.mjs` 负责网页驱动，`bin/gpt.mjs` 是 CLI |
+| 图像工具 | `src/image-tools.mjs` → `model_list` / `image_generation`，模型注册表在 `src/image-models.mjs` |
 | 生图模型 | `src/image-models.mjs` 管模型注册表与 `<root>/settings.json`；浏览器渠道走 ChatGPT 网页（`src/chatgpt.mjs`），OpenAI 兼容端点走 `src/image-api.mjs`（JSON data-URL 或 multipart 两种请求体）；`src/sensenova.mjs` 保留为兼容包装 |
 | 设置页 | `src/settings-host.mjs` 注册 `/api/dsh-shotflow/*` 桥（读写模型列表、写入/清除 key），`client/shotflow-settings.js` 是插件页里的浏览器卡片；密钥解析在 `src/credentials.mjs` |
 | 后台任务 | `src/job-runner.mjs` → 把 `background: true` 的生成挂到 DSH `ctx.jobs`，完成后用 `job_output` 取结果 |
@@ -29,13 +30,13 @@
 ## 运行时序
 
 ```
-gpt_ask / gpt_image (browser/* 模型) / gpt CLI
+gpt_ask / image_generation (browser/* 模型) / gpt CLI
         │  优先复用已打开的 chatgpt.com 标签页；没有才新开
         │  HTTP POST /api/command（Bearer token）
         ▼
 @angelky7/dsh-browser-control 桥（127.0.0.1:9777）→ DSH-Browser-Control 扩展 → 已登录 ChatGPT 标签页
 
-gpt_image(model=sensenova/sensenova-u1.5-lite)
+image_generation(model=sensenova/sensenova-u1.5-lite)
         │  POST https://token.sensenova.cn/v1/images/{generations|edits}
         ▼
 保存 PNG/JPEG/WebP 到 <root>/images/
@@ -96,16 +97,16 @@ dsh plugin --profile <profile> add link:<repo>
 安装后：
 
 - 新建会话时预设列表里出现 **「AI 视频工作流」**；
-- 在该预设会话里可以直接调用 `gpt_ask` / `gpt_image` / `gpt_last` / `image_model_list`、`pixmax` 和 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；
+- 在该预设会话里可以直接调用 `gpt_ask` / `gpt_last`、`model_list` / `image_generation`、`pixmax` 和 `video_probe` / `video_frames` / `video_scenes` / `video_sheet`；
 - 在 **Settings → 插件 → ShotFlow** 里管理生图模型与 API key（根级 `shotflow-settings` 行默认启用，只注册一个 JSON 桥，不带任何工具）；
 - 其他预设（如内置 standard）里**没有**这些工具。
 
 ### 其他预设：手动启用工具
 
-根级 `gpt-tools` / `video-tools` / `pixmax-tools` 默认关闭。需要时在 DSH 的插件/设置界面启用，或写进目标预设的 `plugins` 列表：
+根级 `gpt-chat` / `image-tools` / `video-tools` / `pixmax-tools` 默认关闭。需要时在 DSH 的插件/设置界面启用，或写进目标预设的 `plugins` 列表：
 
 ```yaml
-- id: gpt-tools
+- id: gpt-chat
   name: 'dsh-shotflow'
   config:
     bridgeUrl: 'http://127.0.0.1:9777'   # 可选
@@ -138,9 +139,9 @@ dsh plugin --profile <profile> add link:<repo>
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
 | `gpt_ask` | `prompt`(必填)、`file[]`、`conversation`、`out`、`timeout`、`background` | `conversation_id`、`text`、Markdown `path`、`url`、`title`（后台模式返回 `job_id`） |
-| `gpt_image` | `prompt`(必填)、`model`、`ref[]`、`out`、`size`、`format`、`watermark`、`timeout`、`background` | 图片绝对 `path`、`model`、`channel`、宽高（后台模式返回 `job_id`） |
+| `image_generation` | `prompt`(必填)、`model`、`ref[]`、`out`、`size`、`format`、`watermark`、`timeout`、`background` | 图片绝对 `path`、`model`、`channel`、宽高（后台模式返回 `job_id`） |
 | `gpt_last` | — | 最近会话的 `conversation_id` / `url` / `path` |
-| `image_model_list` | — | 默认模型 + 每个模型的 id、类型、端点、是否已配 key（不返回值） |
+| `model_list` | — | 默认模型 + 每个模型的 id、类型、端点、是否已配 key（不返回值） |
 | `pixmax` | `action` 或 `command[]`，以及 `selector`/`items`/`prompt`/`model`/`set[]`/`left_set[]`/`dry_run` 等 | 零积分 JSON 查询与免费写入结果 |
 | `video_probe` | `path`(必填) | `duration`、`width` / `height`、`fps`、`codec`、`backend` |
 | `video_frames` | `path`(必填)、`every` / `times` / `frames` 三选一、`from`、`to`、`max_frames`、`width`、`quality`、`out`、`attach`、`backend` | 帧文件路径 + 元数据，并把帧附加到当前会话 |
@@ -149,12 +150,12 @@ dsh plugin --profile <profile> add link:<repo>
 
 - `conversation` 支持 conversation id、`https://chatgpt.com/c/<id>` 或 `last`。
 - `file` 会作为文本上下文拼在 prompt 前面。
-- `gpt_image` 的 `channel` 必须由模型选择，渠道特点见下文。
+- `image_generation` 的 `model` 选模型，各模型特点见下文。
 - gpt 调用**优先复用已打开的 chatgpt.com 标签页**（会在里面点“新聊天”或打开指定会话）；没有可用标签页时才新开一个后台标签页。串行执行：同一时间不要并发调用。
 
 ### 生图模型：用 `model` 选模型
 
-`gpt_image` 生图、改图都走同一套模型列表。**模型 id 就是 `provider/model`**：
+`image_generation` 生图、改图都走同一套模型列表。**模型 id 就是 `provider/model`**：
 
 | 模型 | 特点 |
 | --- | --- |
@@ -162,9 +163,9 @@ dsh plugin --profile <profile> add link:<repo>
 | 任意 `provider/modelid` | OpenAI Images 兼容端点（内置 `sensenova/sensenova-u1.5-lite` 与 `...-fast`）。需要 key，**按张计费**；同步数秒级；支持 1–5 张参考图编辑；尺寸 512–4096/2K/4K；输出 png/jpeg/webp；无 ChatGPT 对话上下文；稳定、可后台 |
 
 ```text
-gpt_image prompt="雨夜霓虹街道，电影感"
-gpt_image prompt="把这张图改成水彩" ref=["cat.png"] model="sensenova/sensenova-u1.5-lite" size="2048x2048" format="webp"
-image_model_list            # 看有哪些模型、默认是哪个、key 配没配
+image_generation prompt="雨夜霓虹街道，电影感"
+image_generation prompt="把这张图改成水彩" ref=["cat.png"] model="sensenova/sensenova-u1.5-lite" size="2048x2048" format="webp"
+model_list                  # 看有哪些模型、默认是哪个、key 配没配
 ```
 
 - 不传 `model` 就用设置页里的**默认模型**；传 `browser` / `sensenova` 这类别名也会被解析。
@@ -229,7 +230,7 @@ pixmax command=["node","create","EP2-1组","--type","GENERATE_VIDEO","--prompt",
 
 ### 异步调用：`background: true`
 
-`gpt_ask` / `gpt_image` 都支持后台执行。生成期间不再占住当前对话轮次：
+`gpt_ask` / `image_generation` 都支持后台执行。生成期间不再占住当前对话轮次：
 
 ```text
 gpt_ask  prompt="审查这段视频脚本" background=true
@@ -339,7 +340,7 @@ gpt doctor
 ```
 .
 ├─ package.json          # dsh-shotflow bundle + dsh.client（插件页卡片）+ CLI bin
-├─ cordis.patch.yml      # 根级 gpt-tools/video-tools/pixmax-tools（默认关）+ shotflow-settings（默认开）+ AI 视频工作流 preset
+├─ cordis.patch.yml      # 根级 gpt-chat/image-tools/video-tools/pixmax-tools（默认关）+ shotflow-settings（默认开）+ 预设
 ├─ bin/
 │  ├─ gpt.mjs            # CLI
 │  └─ gpt.cmd            # Windows 启动器
@@ -348,7 +349,8 @@ gpt doctor
 ├─ locale/               # en/zh.json：插件名与描述
 ├─ icon.svg              # 插件图标
 ├─ src/
-│  ├─ gpt-tools.mjs      # gpt_ask / gpt_image / gpt_last / image_model_list
+│  ├─ chat-tools.mjs     # gpt_ask / gpt_last
+│  ├─ image-tools.mjs    # model_list / image_generation
 │  ├─ image-models.mjs   # 生图模型注册表 + <root>/settings.json
 │  ├─ image-api.mjs      # OpenAI Images 兼容端点（JSON data-URL / multipart）
 │  ├─ settings-host.mjs  # 设置页的 Host 桥（/api/dsh-shotflow/*）
