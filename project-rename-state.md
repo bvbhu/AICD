@@ -83,6 +83,18 @@ D:\projects\dsh-pixmax-workflow\
 
 **CLI 路径优先级**：行 `config.pixmaxHome` > 设置页 `<root>/pixmax-cli.json` > 默认 `~/.pixmax-cli`；环境同理（`config.environment` > 文件 > 空）。
 
+**内置模型**：`BUILTIN_MODELS` 只有 `browser/gpt-image-2`。SenseNova 等 OpenAI 兼容端点都是 `settings.json` 里的用户模型；`sensenova` 只是 alias，端点不存在时会报「未知模型」并列出可用 id。
+
+### 本机已写入的配置（2026-11-11 22:35）
+
+| 文件 | 内容 |
+| --- | --- |
+| `~/.dsh/gpt-web/settings.json` | 默认模型 `browser/gpt-image-2`；用户端点 `sensenova/sensenova-u1.5-lite` 与 `sensenova/sensenova-u1.5-fast`（`https://token.sensenova.cn/v1`，apiStyle=json）。不设 envKey，凭据名走默认派生 |
+| `~/.dsh/.credentials.yaml` → `refs` | `PIXMAX_WORKFLOW_IMAGE_SENSENOVA_API_KEY: REPLACE_ME_SENSENOVA_API_KEY` —— **占位值，用之前改成真 key**；原有 4 个 ref 与 3 个 record 保留 |
+| `~/.dsh/gpt-web/pixmax-cli.json` | `home: C:/Users/Administrator/.pixmax-cli`、`environment: cn`（本机目录存在） |
+
+写入时 DSH 未运行，不会被内存缓存覆盖；下次启动即可读到。Cookies 按用户要求**不恢复**：DSH 已自行重建新会话，22:01 的备份仍留在 `Network/Cookies*.bak-20261111-2201`。
+
 ---
 
 ## 五、工具与约束
@@ -122,13 +134,13 @@ desktop profile 的 `cordis.patch.yml` 里已有 `- id: pixmax-tools / video-too
 | 检查项 | 结果 |
 | --- | --- |
 | `node --check`（src + client 全部） | ✅ 0 失败 |
-| `.state/tmp/smoke.mjs` | ✅ **85/85** |
+| `.state/tmp/smoke.mjs` | ✅ **88/88** |
 | 两个 patch 文件 YAML 解析 | ✅ 无 `config: null`；预设 15 个 plugins，无 settings 子行 |
 | preset 引用的内置包 | ✅ 全部存在于 DSH runtime |
 | 远程仓库改名 + 推送 | ✅ `bvbhu/dsh-pixmax-workflow`，main 与 origin/main 同步 |
 | 从 GitHub 安装到 desktop | ✅ 依赖 + bundles 已登记 |
 
-smoke 覆盖：模型注册表、设置桥（含 `/cli`、`/cli/set`、非法环境 400）、`guardArgv` 9 拒 7 放、`UsageError` 分类、报错引导文案与 render、`apply(ctx, null)` 四个模块不抛错、设置页写入的 CLI 路径能被 `resolvePixmax` 读到、`skill_install` 双分支（本机 CLI 装/没装都通过）、7 个工具注册、client slot key。
+smoke 覆盖：模型注册表（内置只有 browser、SenseNova 必须作为用户端点才能解析）、设置桥（含 `/cli`、`/cli/set`、非法环境 400）、`guardArgv` 9 拒 7 放、`UsageError` 分类、报错引导文案与 render、`apply(ctx, null)` 四个模块不抛错、设置页写入的 CLI 路径能被 `resolvePixmax` 读到、`skill_install` 双分支（本机 CLI 装/没装都通过）、7 个工具注册、client slot key。
 
 ---
 
@@ -149,7 +161,7 @@ smoke 覆盖：模型注册表、设置桥（含 `/cli`、`/cli/set`、非法环
 3. 在设置页把 CLI 路径改成错误值：插件不报异常，调用 `pixmax action="doctor"` 才返回安装引导；改回后能跑通。
 4. `pixmax action="node_get"`（缺 selector）→ 返回「查阅 pixmax-cli 技能」提示。
 5. `pixmax action="skill_install"` → `~/.dsh/skills/pixmax-cli/` 落盘，重启后 DSH 能发现技能。
-6. 生图（浏览器渠道 + 一个兼容端点）、本地视频 `video_probe` / `video_frames` / `video_sheet`。
+6. 先把凭据中心 `PIXMAX_WORKFLOW_IMAGE_SENSENOVA_API_KEY` 的占位值改成真 key，再测端点渠道生图；浏览器渠道 + 本地视频 `video_probe` / `video_frames` / `video_sheet`。
 7. 分别开关三个工具行与预设，确认互不影响；**不要关主行**。
 
 ---

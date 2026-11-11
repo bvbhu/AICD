@@ -34,7 +34,7 @@ dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow
 
 设置 → 插件 → **dsh-pixmax-workflow**（bundle 配置区），`image-tools` / `pixmax-tools` 行另有各自的配置入口。
 
-- **生图模型**：内置 `browser/gpt-image-2`（ChatGPT 网页）与两个 SenseNova 端点，可添加任意 OpenAI Images 兼容端点（`provider/modelid`）。模型列表存 `<root>/settings.json`；API key 存 DSH 凭据中心（`PIXMAX_WORKFLOW_IMAGE_*`），页面只显示「是否配置 + 来源」，永不显示值。
+- **生图模型**：内置只有 `browser/gpt-image-2`（ChatGPT 网页）。SenseNova 等 OpenAI Images 兼容端点都是用户模型，存在 `<root>/settings.json`，在设置页里增删改；API key 存 DSH 凭据中心（`PIXMAX_WORKFLOW_IMAGE_<PROVIDER>_API_KEY`），页面只显示「是否配置 + 来源」，永不显示值。
 - **Pixmax CLI 路径**：填 CLI 主目录与 `PIXMAX_ENV`（cn / global），留空用 `~/.pixmax-cli`。写入 `<root>/pixmax-cli.json`，**调用工具时**才读取；也可以在 `pixmax-tools` 行 config 里直接写 `pixmaxHome`（行配置优先）。
 - 路径没配或配错**不会让插件加载失败**，只在调用 `pixmax` 时返回带安装步骤的可读错误。
 

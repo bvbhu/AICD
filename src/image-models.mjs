@@ -21,7 +21,11 @@ import { defaultPluginRoot } from './store.mjs'
 export const SETTINGS_VERSION = 1
 export const BROWSER_MODEL_ID = 'browser/gpt-image-2'
 
-/** Built-in models: always present unless the user disables or overrides them. */
+/**
+ * Only the browser channel ships built-in. Every OpenAI-compatible endpoint —
+ * including SenseNova — is a user model in `<root>/settings.json`, so it can be
+ * edited (or removed) from the plugin settings page without a code change.
+ */
 export const BUILTIN_MODELS = [
   {
     id: BROWSER_MODEL_ID,
@@ -31,30 +35,6 @@ export const BUILTIN_MODELS = [
     model: 'gpt-image-2',
     builtin: true,
     note: '走已登录的 Chrome（无需 API key，用网页额度）；支持参考图/改图；分钟级；可能被 Cloudflare 拦；固定输出 PNG。',
-  },
-  {
-    id: 'sensenova/sensenova-u1.5-lite',
-    label: 'SenseNova U1.5 Lite',
-    kind: 'openai',
-    provider: 'sensenova',
-    model: 'sensenova-u1.5-lite',
-    baseUrl: 'https://token.sensenova.cn/v1',
-    apiStyle: 'json',
-    envKey: 'SENSENOVA_API_KEY',
-    builtin: true,
-    note: 'OpenAI Images 风格端点；按张计费；秒级；支持 1–5 张参考图；输出 png/jpeg/webp。',
-  },
-  {
-    id: 'sensenova/sensenova-u1.5-fast',
-    label: 'SenseNova U1.5 Fast',
-    kind: 'openai',
-    provider: 'sensenova',
-    model: 'sensenova-u1.5-fast',
-    baseUrl: 'https://token.sensenova.cn/v1',
-    apiStyle: 'json',
-    envKey: 'SENSENOVA_API_KEY',
-    builtin: true,
-    note: '同 Lite，速度更快、质量略低；同样按张计费。',
   },
 ]
 
@@ -151,7 +131,11 @@ export function effectiveModels(settings) {
   return [...builtins.map((model) => ({ ...model })), ...userModels.map((model) => ({ ...model }))]
 }
 
-/** Resolve `provider/model` plus the friendly aliases browser/sensenova. */
+/**
+ * Resolve `provider/model` plus friendly aliases. `sensenova` is only a
+ * shortcut to the user-configured endpoint — it is not a built-in model, so it
+ * resolves only while that endpoint exists in settings.json.
+ */
 export function resolveImageModel(settings, requested) {
   const models = effectiveModels(settings)
   const fallbackId = settings?.defaultModel || BROWSER_MODEL_ID

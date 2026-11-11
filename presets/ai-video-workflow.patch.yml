@@ -10,7 +10,7 @@
       config:
         id: ai-video-workflow
         name: AI 视频工作流
-        description: 'AI 视频生成工作流工具集：生图（模型列表 + 生成/改图）+ 零积分 Pixmax 操作 + ffmpeg 视频解析（探测、截帧、切点、总览图）。'
+        description: '生图、Pixmax 零积分操作、视频解析工具集。'
         order: 20
         plugins:
           - id: agent-instructions
