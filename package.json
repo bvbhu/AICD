@@ -1,7 +1,7 @@
 {
   "name": "dsh-shotflow",
-  "version": "0.2.0",
-  "description": "DSH plugin bundle for AI video generation workflows: ChatGPT web tools, optional SenseNova image API, ffmpeg video analysis, and read-only Pixmax inspection",
+  "version": "0.3.0",
+  "description": "DSH plugin bundle for AI video generation workflows: ChatGPT web tools, a settings page for image models (browser + OpenAI-compatible endpoints), ffmpeg video analysis, and credit-free Pixmax operations",
   "type": "module",
   "main": "./src/gpt-tools.mjs",
   "exports": {
@@ -13,9 +13,15 @@
     "./ffmpeg": "./src/ffmpeg.mjs",
     "./job-runner": "./src/job-runner.mjs",
     "./pixmax": "./src/pixmax-tools.mjs",
+    "./settings": "./src/settings-host.mjs",
+    "./image-api": "./src/image-api.mjs",
+    "./image-models": "./src/image-models.mjs",
     "./sensenova": "./src/sensenova.mjs",
     "./video-frames": "./src/video-frames.mjs",
     "./store": "./src/store.mjs",
+    "./client": "./client/shotflow-settings.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -25,6 +31,9 @@
   "files": [
     "bin/",
     "src/",
+    "client/",
+    "locale/",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -43,11 +52,21 @@
     "ai-video",
     "sensenova",
     "pixmax",
-    "agent-preset"
+    "agent-preset",
+    "image-models",
+    "settings"
   ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-renderer"
+      ]
     }
   }
 }

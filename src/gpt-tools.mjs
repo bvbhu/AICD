@@ -1,18 +1,20 @@
 /**
- * DSH tools for ChatGPT web: gpt_ask / gpt_image / gpt_last.
+ * DSH tools for ChatGPT web + image models: gpt_ask / gpt_image / gpt_last /
+ * image_model_list.
  *
- * The tools drive the user's logged-in Chrome through the DSH Browser Control
- * bridge (the same extension used by DSH's browser_* tools), so no API key and
- * no second browser extension are needed.
+ * gpt_ask drives the user's logged-in Chrome through the DSH Browser Control
+ * bridge, so no API key and no second browser extension are needed.
  *
- * Both long-running tools accept `background: true`: the call starts a DSH
+ * gpt_image takes a **model id** chosen by the model itself or the user's
+ * default: `browser/gpt-image-2` routes to the ChatGPT web page, any other
+ * `provider/modelid` routes to an OpenAI-Images-compatible endpoint configured
+ * in the ShotFlow settings page. API keys are never tool arguments: they are
+ * read from an environment variable or the DSH credential center, and the
+ * settings page is the only place that writes them.
+ *
+ * Long-running tools accept `background: true`: the call starts a DSH
  * background job and returns its id immediately, so the conversation is not
- * blocked while ChatGPT generates. The result is read with `job_output` after
- * the in-session completion notice, and `job_kill` cancels it.
- *
- * This module is the plugin entry of the `dsh-shotflow` bundle. It is deliberately
- * NOT mounted at profile level by that bundle: the AI 视频工作流 preset includes it,
- * and any other preset can opt in by adding one row (see README).
+ * blocked while the work runs.
  */
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -20,9 +22,10 @@ import { join, resolve } from 'node:path'
 
 import { BrowserBridge } from './bridge.mjs'
 import { WebError, generateImage, normalizeConversationId, sendPrompt } from './chatgpt.mjs'
-import { clearSecret, resolveSecret, secretStatus, setSecret } from './credentials.mjs'
+import { keyStatus, resolveKey } from './credentials.mjs'
+import { generateWithProvider } from './image-api.mjs'
+import { BROWSER_MODEL_ID, describeModel, effectiveModels, loadImageSettings, resolveImageModel } from './image-models.mjs'
 import { startBackgroundJob } from './job-runner.mjs'
-import { generateWithSensenova } from './sensenova.mjs'
 import { Store, defaultPluginRoot, nowIso, nowStamp, slugify } from './store.mjs'
 
 export const name = 'dsh-shotflow'
@@ -48,19 +51,15 @@ const ASK_PARAMS = {
 
 const IMAGE_PARAMS = {
   prompt: str('图片描述或编辑指令'),
-  channel: {
-    type: 'string',
-    enum: ['browser', 'sensenova'],
-    description:
-      '生图渠道，必须由模型按场景选择。browser: ChatGPT 网页版（无需 API key，用网页额度；支持参考图/编辑；分钟级、依赖 Chrome 登录，可能被 Cloudflare 拦截；输出 PNG）。' +
-      'sensenova: SenseNova U1.5 图像 API（需 SENSENOVA_API_KEY，按张消耗积分；同步数秒级；支持 1-5 张参考图编辑；512-4096/2K/4K；输出 png/jpeg/webp；无 ChatGPT 对话上下文；稳定、可后台）。',
-  },
-  ref: strList('参考图路径（可多个，绝对路径；browser 最多按网页限制，sensenova 最多 5 张）'),
+  model: str(
+    '生图模型 id（provider/model）。browser/gpt-image-2 = ChatGPT 网页版（默认；走已登录 Chrome，无 API key，支持参考图/改图，分钟级，可能被 Cloudflare 拦，固定 PNG）；' +
+      '其他 openai 兼容端点用 provider/modelid（例如 sensenova/sensenova-u1.5-lite）。不传 = 用设置页里的默认模型。用 image_model_list 查看可用模型。',
+  ),
+  ref: strList('参考图路径（可多个，绝对路径；浏览器渠道按网页限制，端点渠道最多 5 张）'),
   out: str('输出图片路径；默认 <root>/images/<时间>-<摘要>.<format>'),
-  size: str('尺寸/比例：browser 写进 prompt 作提示；sensenova 支持 512-4096 且 32 倍数的 WxH、2K/4K、1:1/16:9/9:16/3:2/2:3'),
-  format: { type: 'string', enum: ['png', 'jpeg', 'webp'], description: 'sensenova 输出格式；browser 固定 PNG' },
-  watermark: bool('sensenova 是否加水印（默认 false；browser 忽略）'),
-  model: str('sensenova 模型：sensenova-u1.5-lite（默认）或 sensenova-u1.5-fast'),
+  size: str('尺寸/比例：浏览器渠道写进 prompt 作提示；端点渠道支持 512-4096 且 32 倍数的 WxH、2K/4K、1:1/16:9/9:16/3:2/2:3'),
+  format: { type: 'string', enum: ['png', 'jpeg', 'webp'], description: '端点渠道输出格式；浏览器渠道固定 PNG' },
+  watermark: bool('端点渠道是否加水印（默认 false；浏览器渠道忽略）'),
   timeout: num('超时秒数（默认 300）'),
   background: BACKGROUND_PARAM,
 }
@@ -87,9 +86,11 @@ function createRuntime(config = {}) {
     }),
     defaultTimeout: Number(config.timeoutSec || 300),
     reuseExistingTab: config.reuseExistingTab !== false,
-    sensenovaBaseUrl: config.sensenovaBaseUrl || 'https://token.sensenova.cn/v1',
-    sensenovaModel: config.sensenovaModel || 'sensenova-u1.5-lite',
   }
+}
+
+function readSettings(root) {
+  return loadImageSettings(root)
 }
 
 function resolveConversation(store, value) {
@@ -151,27 +152,26 @@ async function runAsk({ store, bridge, defaultTimeout, prepared, signal, progres
 }
 
 function prepareImage(runtime, args) {
+  const settings = readSettings(runtime.root)
+  const { model } = resolveImageModel(settings, args.model)
   let prompt = String(args.prompt || '')
   if (!prompt.trim()) throw new Error('prompt 为空')
-  const channel = args.channel === 'sensenova' ? 'sensenova' : 'browser'
-  if (channel === 'browser' && args.size) prompt = `${prompt.trim()}\n\n（尺寸/比例：${args.size}）`
+  if (model.kind === 'browser' && args.size) prompt = `${prompt.trim()}\n\n（尺寸/比例：${args.size}）`
   const refs = (args.ref || []).map((file) => {
     const path = resolve(file)
     if (!existsSync(path)) throw new Error(`参考图不存在: ${path}`)
     return path
   })
-  const format = args.format || 'png'
+  const format = model.kind === 'browser' ? 'png' : args.format || 'png'
   const ext = format === 'jpeg' ? 'jpg' : format
   return {
-    channel,
+    model,
     prompt: prompt.trim(),
-    out: args.out ? resolve(args.out) : join(runtime.store.images, `${nowStamp()}-${slugify(prompt)}.${channel === 'browser' ? 'png' : ext}`),
+    out: args.out ? resolve(args.out) : join(runtime.store.images, `${nowStamp()}-${slugify(prompt)}.${ext}`),
     refs,
     size: args.size,
     format,
     watermark: args.watermark === true,
-    model: args.model || runtime.sensenovaModel,
-    baseUrl: runtime.sensenovaBaseUrl,
     timeoutSec: Number(args.timeout || 0) || undefined,
   }
 }
@@ -189,6 +189,7 @@ async function runImage({ bridge, defaultTimeout, prepared, signal, progress, re
   })
   return {
     status: 'completed',
+    model: prepared.model.id,
     channel: 'browser',
     path: result.path,
     created: nowIso(),
@@ -198,41 +199,49 @@ async function runImage({ bridge, defaultTimeout, prepared, signal, progress, re
   }
 }
 
-async function runSensenova({ ctx, prepared, signal, progress }) {
-  const secret = await resolveSecret(ctx, 'sensenova')
-  if (!secret.value) {
-    throw new Error('缺少 SENSENOVA_API_KEY：先设置环境变量（优先），或在 api_key 工具里写入 DSH 凭据中心')
+async function runModelImage({ ctx, prepared, signal, progress }) {
+  const model = prepared.model
+  const key = await resolveKey(ctx, model)
+  if (!key.value) {
+    const where = key.envKey ? `环境变量 ${key.envKey}` : '环境变量'
+    throw new Error(
+      `模型 ${model.id} 缺少 API key：在 Settings → 插件 → ShotFlow 里给它填一个（会写入 DSH 凭据中心 ${key.credentialName}），` +
+        `或设置${where}（环境变量优先，设置后设置页不再写入）。`,
+    )
   }
-  progress?.('调用 SenseNova 图像接口…')
-  const result = await generateWithSensenova({
-    apiKey: secret.value,
+  progress?.(`调用 ${model.id}…`)
+  const sensenovaLike = model.apiStyle === 'json' && model.provider === 'sensenova'
+  const result = await generateWithProvider({
+    apiKey: key.value,
     prompt: prepared.prompt,
     refs: prepared.refs,
     size: prepared.size,
     out: prepared.out,
-    model: prepared.model,
-    baseUrl: prepared.baseUrl,
-    watermark: prepared.watermark,
+    model: model.model,
+    baseUrl: model.baseUrl,
+    apiStyle: model.apiStyle === 'multipart' ? 'multipart' : 'json',
+    providerFields: sensenovaLike,
     outputFormat: prepared.format,
+    watermark: prepared.watermark,
     timeoutSec: prepared.timeoutSec || 180,
     signal,
+    label: model.label || model.id,
   })
   return {
     status: 'completed',
-    channel: 'sensenova',
+    model: model.id,
+    channel: 'openai',
     path: result.path,
     created: nowIso(),
     width: result.width,
     height: result.height,
-    model: result.model,
     bytes: result.bytes,
+    endpoint: result.endpoint,
   }
 }
 
 function formatAskJob(result) {
   const text = String(result.text || '')
-  // The job ring keeps ~16 KB after settlement; keep the JSON line well under
-  // that so `job_output` still sees the metadata and a useful preview.
   const preview = text.slice(0, 3000)
   return `\n[gpt] 完成\n${JSON.stringify({
     status: 'completed',
@@ -320,14 +329,19 @@ export function apply(ctx, config = {}) {
       const prepared = prepareAsk(store, args)
       prepared.out = args.out ? resolve(args.out) : undefined
       if (!args.background) {
-        return await exclusive(() => runAsk({ store, bridge, defaultTimeout, prepared, reuseExistingTab: runtime.reuseExistingTab }))
+        return await exclusive(() =>
+          runAsk({ store, bridge, defaultTimeout, prepared, reuseExistingTab: runtime.reuseExistingTab }),
+        )
       }
       const jobId = startBackgroundJob({
         ctx,
         exec,
         kind: 'gpt',
         label: prepared.prompt,
-        task: ({ signal, progress }) => exclusive(() => runAsk({ store, bridge, defaultTimeout, prepared, signal, progress, reuseExistingTab: runtime.reuseExistingTab })),
+        task: ({ signal, progress }) =>
+          exclusive(() =>
+            runAsk({ store, bridge, defaultTimeout, prepared, signal, progress, reuseExistingTab: runtime.reuseExistingTab }),
+          ),
         formatResult: formatAskJob,
       })
       return { status: 'running', job_id: jobId, conversation_id: '', text: '' }
@@ -337,14 +351,13 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'gpt_image',
     description:
-      '生成或编辑图片。必须由模型指定 channel：' +
-      'browser = ChatGPT 网页版（走已登录 Chrome，不消耗 API 额度；支持参考图/编辑；分钟级，依赖浏览器登录，可能被 Cloudflare 拦截；输出 PNG）。' +
-      'sensenova = SenseNova U1.5 图像 API（需要 SENSENOVA_API_KEY，按张消耗积分；同步数秒级；支持 1-5 张参考图编辑；尺寸 512-4096/2K/4K；输出 png/jpeg/webp；没有 ChatGPT 对话上下文；稳定、可后台）。' +
-      '两个渠道都支持 background=true 立即返回 job_id。',
+      '生成或编辑图片。用 model 选模型（provider/model）：browser/gpt-image-2 = ChatGPT 网页版（默认；走已登录 Chrome，不消耗 API 额度，支持参考图/改图，分钟级，可能被 Cloudflare 拦，固定 PNG）；' +
+      '其他 openai 兼容端点写 provider/modelid（例如 sensenova/sensenova-u1.5-lite，按张计费、秒级、支持 1-5 张参考图、输出 png/jpeg/webp）。' +
+      '可用模型与各自是否已配 key 见 image_model_list；API key 在 Settings → 插件 → ShotFlow 里配置，不是工具参数。两个渠道都支持 background=true。',
     parameters: {
       type: 'object',
       properties: IMAGE_PARAMS,
-      required: ['prompt', 'channel'],
+      required: ['prompt'],
       additionalProperties: false,
     },
     output: {
@@ -352,14 +365,15 @@ export function apply(ctx, config = {}) {
         type: 'object',
         properties: {
           status: { type: 'string' },
+          model: { type: 'string' },
           channel: { type: 'string' },
           path: { type: 'string' },
           created: { type: 'string' },
           conversation_id: { type: 'string' },
           width: { type: 'number' },
           height: { type: 'number' },
-          model: { type: 'string' },
           bytes: { type: 'number' },
+          endpoint: { type: 'string' },
           job_id: { type: 'string' },
         },
         required: ['status'],
@@ -367,27 +381,38 @@ export function apply(ctx, config = {}) {
       },
       render: (_args, value) => {
         if (value.status === 'running' && value.job_id) return imageRunningRender(value.job_id)
-        return [{ type: 'text', text: `图片已生成 (${value.channel || 'browser'}): ${value.path || ''}` }]
+        return [{ type: 'text', text: `图片已生成 (${value.model || value.channel || ''}): ${value.path || ''}` }]
       },
     },
     isConcurrencySafe: () => false,
-    presentCall: (args) => ({ card: 'generic', title: `GPT image ${String(args?.prompt || '').slice(0, 60)}`, kind: 'other' }),
+    presentCall: (args) => ({
+      card: 'generic',
+      title: `GPT image ${String(args?.prompt || '').slice(0, 60)}`,
+      kind: 'other',
+    }),
     async execute(args, exec) {
-      const { store, bridge, defaultTimeout } = createRuntime(config)
+      const { bridge, defaultTimeout } = createRuntime(config)
       const prepared = prepareImage(runtime, args)
-      const isBrowser = prepared.channel === 'browser'
+      const isBrowser = prepared.model.kind === 'browser'
       if (!args.background) {
-        if (isBrowser) return await exclusive(() => runImage({ bridge, defaultTimeout, prepared, reuseExistingTab: runtime.reuseExistingTab }))
-        return await runSensenova({ ctx, prepared })
+        if (isBrowser) {
+          return await exclusive(() =>
+            runImage({ bridge, defaultTimeout, prepared, reuseExistingTab: runtime.reuseExistingTab }),
+          )
+        }
+        return await runModelImage({ ctx, prepared })
       }
       const jobId = startBackgroundJob({
         ctx,
         exec,
         kind: 'gpt-image',
         label: prepared.prompt,
-        task: ({ signal, progress }) => isBrowser
-          ? exclusive(() => runImage({ bridge, defaultTimeout, prepared, signal, progress, reuseExistingTab: runtime.reuseExistingTab }))
-          : runSensenova({ ctx, prepared, signal, progress }),
+        task: ({ signal, progress }) =>
+          isBrowser
+            ? exclusive(() =>
+                runImage({ bridge, defaultTimeout, prepared, signal, progress, reuseExistingTab: runtime.reuseExistingTab }),
+              )
+            : runModelImage({ ctx, prepared, signal, progress }),
         formatResult: formatImageJob,
       })
       return { status: 'running', job_id: jobId }
@@ -395,65 +420,64 @@ export function apply(ctx, config = {}) {
   })
 
   ctx.tools.register({
-    name: 'api_key',
+    name: 'image_model_list',
     description:
-      '管理 SenseNova / Pixmax 的 API 密钥。读取顺序与 DSH 模型配置一致：环境变量优先；环境变量存在时拒绝写入凭据中心。' +
-      'action=status 只看是否配置与来源（不返回值）；action=set 写 DSH 凭据中心（需 value）；action=clear 删除凭据中心里的值。',
-    parameters: {
-      type: 'object',
-      properties: {
-        service: { type: 'string', enum: ['sensenova', 'pixmax'], description: 'sensenova=SENSENOVA_API_KEY，pixmax=PIXMAX_BEARER_TOKEN' },
-        action: { type: 'string', enum: ['status', 'set', 'clear'], description: 'status / set / clear' },
-        value: { type: 'string', description: 'set 时的密钥值；status/clear 不需要' },
-      },
-      required: ['service', 'action'],
-      additionalProperties: false,
-    },
+      '列出生图模型列表：每个模型的 id（provider/model）、类型（browser = ChatGPT 网页，openai = OpenAI 兼容端点）、端点地址、' +
+      '是否为内置模型、是否已配 API key（只看是否存在与来源，不返回值），以及当前默认模型。' +
+      'gpt_image 的 model 参数取这里的 id；模型与 key 在 Settings → 插件 → ShotFlow 里增删改。',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: {
       schema: {
         type: 'object',
         properties: {
           status: { type: 'string' },
-          service: { type: 'string' },
-          configured: { type: 'boolean' },
-          source: { type: 'string' },
-          env: { type: 'string' },
-          envSet: { type: 'boolean' },
-          canStore: { type: 'boolean' },
-          message: { type: 'string' },
-          error: { type: 'string' },
+          default: { type: 'string' },
+          count: { type: 'number' },
+          models: { type: 'array', items: { type: 'object' } },
         },
-        required: ['status', 'service'],
+        required: ['status', 'default', 'models'],
         additionalProperties: false,
       },
-      render: (_args, value) => [{
-        type: 'text',
-        text: value.message || `${value.service}: configured=${value.configured} source=${value.source} env=${value.env}${value.envSet ? '（环境变量已设置，禁止写入凭据中心）' : ''}`,
-      }],
+      render: (_args, value) => [
+        {
+          type: 'text',
+          text: [
+            `默认模型: ${value.default}`,
+            ...(value.models || []).map((model) => {
+              const key = model.key
+              const keyText =
+                model.kind === 'browser'
+                  ? '无需 key'
+                  : key?.configured
+                    ? `key: ${key.source === 'env' ? '环境变量' : '凭据中心'}`
+                    : 'key: 未配置'
+              return `- ${model.id}${model.id === value.default ? ' (默认)' : ''} · ${model.label} · ${model.kind} · ${keyText}${model.baseUrl ? ` · ${model.baseUrl}` : ''}`
+            }),
+          ].join('\n'),
+        },
+      ],
     },
     isConcurrencySafe: () => true,
-    async execute(args) {
-      const service = String(args.service || '')
-      const action = String(args.action || '')
-      if (action === 'status') {
-        const status = await secretStatus(ctx, service)
-        return { status: 'completed', service, ...status, configured: Boolean(status.configured) }
+    async execute() {
+      const settings = readSettings(runtime.root)
+      const models = effectiveModels(settings)
+      const described = []
+      for (const model of models) {
+        described.push(describeModel(model, model.kind === 'browser' ? { configured: true, source: 'browser' } : await keyStatus(ctx, model)))
       }
-      if (action === 'set') {
-        await setSecret(ctx, service, args.value)
-        return { status: 'completed', service, message: `${service} 已写入 DSH 凭据中心` }
+      return {
+        status: 'completed',
+        default: settings.defaultModel || BROWSER_MODEL_ID,
+        count: described.length,
+        models: described,
       }
-      if (action === 'clear') {
-        const result = await clearSecret(ctx, service)
-        return { status: 'completed', service, message: result.envStillSet ? `${service} 已清除凭据中心值；环境变量仍然优先` : `${service} 已清除` }
-      }
-      throw new Error(`不支持的 action: ${action}`)
     },
   })
 
   ctx.tools.register({
     name: 'gpt_last',
-    description: '返回最近一次 gpt_ask 会话的 conversation_id、URL 与 Markdown 路径，用于续聊（gpt_ask 的 conversation 可传 last 或该 id）。',
+    description:
+      '返回最近一次 gpt_ask 会话的 conversation_id、URL 与 Markdown 路径，用于续聊（gpt_ask 的 conversation 可传 last 或该 id）。',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: {
       schema: {
@@ -479,10 +503,16 @@ export function apply(ctx, config = {}) {
       const { store } = createRuntime(config)
       const meta = store.readLast()
       if (!meta?.conversation_id) throw new Error('没有可用会话记录；先成功调用一次 gpt_ask')
-      return { status: 'completed', conversation_id: String(meta.conversation_id), url: String(meta.url || ''), path: String(meta.path || '') }
+      return {
+        status: 'completed',
+        conversation_id: String(meta.conversation_id),
+        url: String(meta.url || ''),
+        path: String(meta.path || ''),
+      }
     },
   })
 
-  const banner = `[dsh-shotflow] gpt_ask/gpt_image/gpt_last registered (bridge ${runtime.bridge.url}, root ${runtime.root}; background jobs via ctx.jobs)`
-  ctx.logger?.info?.(banner)
+  ctx.logger?.info?.(
+    `[dsh-shotflow] gpt_ask/gpt_image/gpt_last/image_model_list registered (bridge ${runtime.bridge.url}, root ${runtime.root}; models: ${effectiveModels(readSettings(runtime.root)).map((model) => model.id).join(', ')})`,
+  )
 }

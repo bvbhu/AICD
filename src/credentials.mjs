@@ -76,3 +76,90 @@ export async function secretStatus(ctx, service) {
     ...(resolved.error ? { error: resolved.error } : {}),
   }
 }
+/* ------------------------------------------------------------------------- *
+ * Generic per-model keys (used by the 生图模型列表).
+ *
+ * A model entry may declare `envKey` (the environment variable that always
+ * wins) and `credentialName` (the DSH credential record). When neither is
+ * declared the credential name is derived from the provider, so an endpoint
+ * added in the settings page still has a stable place to keep its key.
+ * ------------------------------------------------------------------------- */
+
+function credentialNameFor(provider) {
+  const slug = String(provider || 'provider')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return `SHOTFLOW_IMAGE_${slug || 'PROVIDER'}_API_KEY`
+}
+
+/** Resolve the environment variable and credential record names of one model. */
+export function keySpecOf(model = {}) {
+  const envKey = String(model.envKey || '').trim()
+  const credentialName = String(model.credentialName || envKey || credentialNameFor(model.provider)).trim()
+  return { envKey, credentialName, provider: String(model.provider || ''), modelId: String(model.id || '') }
+}
+
+function credentialsService(ctx) {
+  const credentials = ctx.get('credentials')
+  if (!credentials?.resolve) throw new Error('当前组合没有凭据服务（ctx.credentials）')
+  return credentials
+}
+
+/** Resolve one model's API key without ever logging the value. */
+export async function resolveKey(ctx, model) {
+  const spec = keySpecOf(model)
+  if (spec.envKey) {
+    const fromEnv = process.env[spec.envKey]
+    if (typeof fromEnv === 'string' && fromEnv.trim()) {
+      return { value: fromEnv.trim(), source: 'env', ...spec, canStore: false }
+    }
+  }
+  const credentials = ctx.get('credentials')
+  if (!credentials?.resolve) {
+    return { value: '', source: 'none', ...spec, canStore: false, error: '当前组合没有凭据服务（ctx.credentials）' }
+  }
+  try {
+    const resolved = await credentials.resolve(spec.credentialName)
+    if (resolved?.value) return { value: String(resolved.value), source: 'credentials', ...spec, canStore: true }
+  } catch (error) {
+    return { value: '', source: 'none', ...spec, canStore: true, error: String(error?.message || error) }
+  }
+  return { value: '', source: 'none', ...spec, canStore: true }
+}
+
+/** Write one model's key into the DSH credential center. */
+export async function setKey(ctx, model, value) {
+  const spec = keySpecOf(model)
+  if (typeof value !== 'string' || !value.trim()) throw new Error('value 不能为空')
+  if (spec.envKey && process.env[spec.envKey]) {
+    throw new Error(`环境变量 ${spec.envKey} 已设置，按优先级不会再写入凭据中心；如需在凭据中心管理，请先移除该环境变量。`)
+  }
+  const credentials = credentialsService(ctx)
+  if (!credentials.set) throw new Error('当前组合没有凭据服务（ctx.credentials）')
+  await credentials.set(spec.credentialName, value.trim())
+  return { set: true, ...spec }
+}
+
+/** Remove one model's key from the DSH credential center. */
+export async function clearKey(ctx, model) {
+  const spec = keySpecOf(model)
+  const credentials = credentialsService(ctx)
+  if (!credentials.unset) throw new Error('当前组合没有凭据服务（ctx.credentials）')
+  await credentials.unset(spec.credentialName)
+  return { cleared: true, ...spec, envStillSet: Boolean(spec.envKey && process.env[spec.envKey]) }
+}
+
+/** Presence/source summary for the settings page. Never returns the value. */
+export async function keyStatus(ctx, model) {
+  const resolved = await resolveKey(ctx, model)
+  return {
+    configured: Boolean(resolved.value),
+    source: resolved.source,
+    envKey: resolved.envKey,
+    credentialName: resolved.credentialName,
+    envSet: resolved.source === 'env',
+    canStore: resolved.canStore,
+    ...(resolved.error ? { error: resolved.error } : {}),
+  }
+}

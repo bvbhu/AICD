@@ -18,6 +18,11 @@
       config:
         # pixmaxHome: '~/.pixmax-cli'
         # environment: cn
+    # Settings page for the 生图模型列表 (host JSON bridge + browser card).
+    # Enabled by default: it registers no tools and spends nothing — it only
+    # reads/writes <root>/settings.json and the DSH credential center.
+    - id: shotflow-settings
+      name: 'dsh-shotflow/settings'
 
 # AI video generation workflow preset: tools only. No persona and no extra
 # context files — just the ChatGPT web tools and the local ffmpeg video analysis
@@ -64,7 +69,10 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
-          # ChatGPT web tools: gpt_ask / gpt_image / gpt_last (background jobs supported)
+          # Image-model settings page: model list + API keys (no tools)
+          - id: shotflow-settings
+            name: 'dsh-shotflow/settings'
+          # ChatGPT web tools: gpt_ask / gpt_image / gpt_last / image_model_list
           - id: gpt-tools
             name: 'dsh-shotflow'
             config:

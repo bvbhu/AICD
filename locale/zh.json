@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "title": "ShotFlow",
+    "description": "ChatGPT 网页工具、生图模型设置、ffmpeg 视频解析与零积分 Pixmax 操作。"
+  },
+  "settings": {
+    "title": "生图模型",
+    "hint": "gpt_image 使用的模型；API key 存在 DSH 凭据中心。"
+  }
+}
