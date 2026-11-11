@@ -14,16 +14,16 @@ DSH 插件 bundle（从 GitHub 安装，未发布 npm），为 AI 视频生成�
 
 **bundle 主行**（`name: 'dsh-pixmax-workflow'`，默认开）**不是子组件**：它加载 `package.json` 的 `main`（`src/settings-host.mjs`），注册设置页 HTTP 桥，且 DSH 只把浏览器端（client 卡片）挂在「说明符恰为包名」的那一行上。关掉它会同时失去设置页与桥。
 
-四个**可独立开关**的条目：
+**工具只注册给自带预设**，其他预设（含 `standard`）看不到：
 
 | 条目 | 默认 | 内容 |
 | --- | --- | --- |
-| `image-tools` | 关 | `model_list`、`image_generation` |
-| `video-tools` | 关 | `video_probe`、`video_frames`、`video_scenes`、`video_sheet` |
-| `pixmax-tools` | 关 | `pixmax`（81 个 action + `command` 直通 + `skill_install`） |
-| `preset-ai-video-workflow` | 开 | 「AI 视频工作流」预设，只组合工具，无 persona、不绑平台、不依赖技能文件 |
+| `dsh-pixmax-workflow`（bundle 主行） | 开 | 设置页 + HTTP 桥，**0 个工具** |
+| `preset-ai-video-workflow` | 开 | 「AI 视频工作流」预设：`model_list`、`image_generation`、`video_probe/frames/scenes/sheet`、`pixmax` |
 
-预设声明放在 `presets/ai-video-workflow.patch.yml`，与 `cordis.patch.yml` 一起列在 `package.json → dsh.bundle.patch` 数组里（DSH 官方 `@deepseek-ai/dsh-web-app` 同款布局，一个预设一个 patch 文件）。预设自带已启用的工具副本，与根级工具行开关互不影响。
+`cordis.patch.yml` **只声明 bundle 自身**（`2026-11-12` 起把根级 `image-tools` / `video-tools` / `pixmax-tools` 三行移除了）：根级行会被所有预设看到，达不到「只给自带预设」的要求。三个工具行只存在于 `presets/ai-video-workflow.patch.yml`，与 `cordis.patch.yml` 一起列在 `package.json → dsh.bundle.patch` 数组里（DSH 官方 `@deepseek-ai/dsh-web-app` 同款布局，一个预设一个 patch 文件）。想在别的预设里用，得手动把行加进那个预设的 `plugins`，不会自动继承。
+
+desktop profile 的 `cordis.patch.yml` 里原有三条 `- id: pixmax-tools / video-tools / image-tools disabled: false`（早期手动启用留下的悬空覆盖），已随本次改动一并清理，备份 `cordis.patch.yml.bak-1794419571`。
 
 `dsh-pixmax-workflow/settings` 这个 export 仍保留（向后兼容），但**不再作为插件行出现**——既不在根级，也不在预设的 `plugins` 里。
 
@@ -46,7 +46,7 @@ DSH 插件 bundle（从 GitHub 安装，未发布 npm），为 AI 视频生成�
 ```
 D:\projects\dsh-pixmax-workflow\
 ├─ package.json          # main → src/settings-host.mjs；dsh.bundle.patch 为数组
-├─ cordis.patch.yml      # bundle 主行 + 三个可独立开关的工具行（默认关）
+├─ cordis.patch.yml      # 只声明 bundle 主行（工具行在 presets/ 里）
 ├─ presets/
 │  └─ ai-video-workflow.patch.yml   # 预设声明（单独 patch 文件）
 ├─ client/
@@ -59,7 +59,7 @@ D:\projects\dsh-pixmax-workflow\
 │  ├─ video-tools.mjs / ffmpeg.mjs / video-frames.mjs
 │  ├─ pixmax-tools.mjs       # pixmax 工具 + guard + 报错引导
 │  ├─ credentials.mjs / bridge.mjs / chatgpt.mjs / job-runner.mjs / store.mjs
-└─ .state/tmp/smoke.mjs     # 92 项自动检查（gitignore，不入 git）
+└─ .state/tmp/smoke.mjs     # 95 项自动检查（gitignore，不入 git）
 ```
 
 `skills/`、`__*`、`.state/`、`conversations/`、`images/`、`video-frames/` 均为 gitignore 的私有材料。
@@ -125,7 +125,7 @@ dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow
 
 本地开发可 `dsh plugin --profile <profile> add link:D:/projects/dsh-pixmax-workflow`。
 
-desktop profile 的 `cordis.patch.yml` 里已有 `- id: pixmax-tools / video-tools / image-tools disabled: false`（手动启用过三个工具行）；这些覆盖行不带 `config`，不影响设置页写的 CLI 路径。
+desktop profile 的 `cordis.patch.yml` 里原有三条 `- id: pixmax-tools / video-tools / image-tools disabled: false`（早期手动启用留下的悬空覆盖）；根级行移除后已清理这 6 行，备份 `cordis.patch.yml.bak-1794419571`。
 
 ---
 
@@ -134,7 +134,7 @@ desktop profile 的 `cordis.patch.yml` 里已有 `- id: pixmax-tools / video-too
 | 检查项 | 结果 |
 | --- | --- |
 | `node --check`（src + client 全部） | ✅ 0 失败 |
-| `.state/tmp/smoke.mjs` | ✅ **92/92** |
+| `.state/tmp/smoke.mjs` | ✅ **95/95** |
 | 两个 patch 文件 YAML 解析 | ✅ 无 `config: null`；预设 15 个 plugins，无 settings 子行 |
 | preset 引用的内置包 | ✅ 全部存在于 DSH runtime |
 | 远程仓库改名 + 推送 | ✅ `bvbhu/dsh-pixmax-workflow`，main 与 origin/main 同步 |
@@ -162,7 +162,7 @@ smoke 覆盖：模型注册表（内置只有 browser、SenseNova 必须作为�
 4. `pixmax action="node_get"`（缺 selector）→ 返回「查阅 pixmax-cli 技能」提示。
 5. `pixmax action="skill_install"` → `~/.dsh/skills/pixmax-cli/` 落盘，重启后 DSH 能发现技能。
 6. 先把凭据中心 `PIXMAX_WORKFLOW_IMAGE_SENSENOVA_API_KEY` 的占位值改成真 key，再测端点渠道生图；浏览器渠道 + 本地视频 `video_probe` / `video_frames` / `video_sheet`。
-7. 分别开关三个工具行与预设，确认互不影响；**不要关主行**。
+7. 确认「AI 视频工作流」预设里有 7 个工具、`standard` 等其它预设里没有；**不要关主行**。
 
 ---
 
@@ -181,7 +181,7 @@ src/pixmax-tools.mjs      ~800 行   # 81 action + guard + 报错引导
 src/settings-host.mjs     ~230 行   # 6 个 HTTP 端点
 src/pixmax-config.mjs      ~65 行   # CLI 配置文件读写
 client/pixmax-workflow-settings.js  ~570 行  # 生图模型 + CLI 路径卡片
-cordis.patch.yml           ~40 行   # 主行 + 三个工具行
+cordis.patch.yml           ~20 行   # 只声明 bundle 主行
 presets/ai-video-workflow.patch.yml ~90 行   # 预设声明
 README.md                 ~110 行   # 已大幅精简
 ```

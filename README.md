@@ -6,16 +6,14 @@ DSH 插件 bundle：给 AI 视频生成工作流提供 7 个工具、一个只�
 
 bundle 主行 `name: 'dsh-pixmax-workflow'`（默认开）**不是子组件**：它注册设置页的 HTTP 桥，而 DSH 只把浏览器端挂在「说明符恰为包名」的那一行上。别关掉它，否则设置页和桥一起消失。
 
-四个**可独立开关**的条目：
+**工具只注册给自带预设**，其他预设（含 `standard`）看不到：
 
 | 条目 | 默认 | 内容 |
 | --- | --- | --- |
-| `image-tools` | 关 | `model_list`、`image_generation` |
-| `video-tools` | 关 | `video_probe`、`video_frames`、`video_scenes`、`video_sheet` |
-| `pixmax-tools` | 关 | `pixmax`（81 个 action + `command` 直通 + `skill_install`） |
-| `preset-ai-video-workflow` | 开 | 「AI 视频工作流」预设：只组合工具，无 persona、不绑平台、不依赖技能文件 |
+| `dsh-pixmax-workflow`（bundle 主行） | 开 | 设置页 + HTTP 桥，**0 个工具** |
+| `preset-ai-video-workflow` | 开 | 「AI 视频工作流」预设：`model_list`、`image_generation`、`video_probe/frames/scenes/sheet`、`pixmax` |
 
-预设声明单独放在 `presets/ai-video-workflow.patch.yml`，与 `cordis.patch.yml` 一起列在 `package.json → dsh.bundle.patch`（与 DSH 官方 bundle 同款布局）。三个工具行默认关，避免污染其他预设；预设自带已启用的副本，所以开关互不影响。
+`cordis.patch.yml` **只声明 bundle 自身**，根级不放任何工具行——根级行会被所有预设看到。三个工具行（`image-tools` / `video-tools` / `pixmax-tools`）只存在于 `presets/ai-video-workflow.patch.yml`，与 `cordis.patch.yml` 一起列在 `package.json → dsh.bundle.patch`。想让别的预设也有这些工具，得自己往那个预设的 `plugins` 里加行，**不会自动继承**。
 
 > `config:` 只写注释会被 YAML 解析成 `null`，Cordis 会把 `null` 传给插件。所有行都写显式映射，代码层也做了兜底。
 
@@ -28,7 +26,7 @@ dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow
 
 `dsh plugin` 会同时登记依赖与 `dsh.profile.bundles`。本地开发可改用 `add link:D:/projects/dsh-pixmax-workflow`。
 
-重启后新建会话选「AI 视频工作流」即可用全部工具；其他预设里默认没有，需要到设置 → 插件里单独打开三个工具行。
+重启后新建会话选「AI 视频工作流」即可用全部工具。**其他预设（含 `standard`）不会出现这些工具**；要在别的预设里用，把三个工具行加进那个预设的 `plugins`。
 
 ## 配置
 
@@ -95,7 +93,7 @@ pixmax action="skill_install"  # 把 CLI 自带 SKILL.md + references 装进 ~/.
 
 ```powershell
 node --check src/*.mjs
-node .state/tmp/smoke.mjs    # 92/92：模型注册表、设置桥（含 CLI 配置）、guard、报错引导、params 合并、工具注册
+node .state/tmp/smoke.mjs    # 95/95：模型注册表、设置桥（含 CLI 配置）、guard、报错引导、params 合并、工具注册
 ```
 
 `.state/`、`conversations/`、`images/`、`video-frames/`、`skills/`、`__*` 均为私有工作材料，`.gitignore` 已排除。

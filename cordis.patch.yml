@@ -1,38 +1,19 @@
 # dsh-pixmax-workflow — bundle composition.
 #
-# The first row IS the bundle itself: its `name` is exactly the package name,
-# which is the only row dsh-client-modules mounts the browser half (settings
-# card) onto. It registers the HTTP bridge and no tools. It is NOT a switchable
-# component — turning it off removes the settings page and the bridge.
+# The only row here IS the bundle itself: its `name` is exactly the package
+# name, which is the only row dsh-client-modules mounts the browser half
+# (settings card) onto. It registers the HTTP bridge and no tools. It is NOT a
+# switchable component — turning it off removes the settings page and the bridge.
 #
-# The four independently switchable entries are:
-#   image-tools / video-tools / pixmax-tools  (off by default)
-#   preset-ai-video-workflow                 (declared in presets/, on by default)
-# A `config:` key with only comments parses as YAML null, so every row here
-# declares an explicit mapping.
+# Tools are NOT declared at bundle level on purpose. A root-level row would be
+# visible to every preset (e.g. `standard`); the tools must only reach the
+# bundled preset. They live in presets/ai-video-workflow.patch.yml instead:
+#   image-tools / video-tools / pixmax-tools
+# To get them in another preset, add the rows to that preset yourself — they are
+# deliberately not inherited.
+#
+# A `config:` key with only comments parses as YAML null, so every row declares
+# an explicit mapping.
 - insert:
     - id: pixmax-workflow
       name: 'dsh-pixmax-workflow'
-
-    # Image tools (model_list / image_generation).
-    - id: image-tools
-      name: 'dsh-pixmax-workflow/image'
-      disabled: true
-      config: {}
-
-    - id: video-tools
-      name: 'dsh-pixmax-workflow/video'
-      disabled: true
-      config:
-        backend: auto
-        # ffmpegPath: 'D:/path/to/ffmpeg.exe'
-
-    - id: pixmax-tools
-      name: 'dsh-pixmax-workflow/pixmax'
-      disabled: true
-      config:
-        # Empty = use the CLI home saved from the plugin settings card, then
-        # fall back to ~/.pixmax-cli. A wrong path never breaks bundle loading;
-        # it only produces a readable error when the tool is called.
-        pixmaxHome: ''
-        # environment: cn
