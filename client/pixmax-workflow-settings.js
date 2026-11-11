@@ -18,7 +18,6 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const PREFIX = '/api/dsh-pixmax-workflow'
-    const CARD_ID = 'pixmax-workflow-settings'
 
     async function call(path, init) {
       const response = await fetch(PREFIX + path, {
@@ -107,6 +106,117 @@ window.__ModuleLoader__.load({
       if (key.source === 'browser') return h('span', { style: styles.badge }, '无需 key')
       if (key.configured) return h('span', { style: { ...styles.badge, ...styles.ok } }, key.source === 'env' ? 'key: 环境变量' : 'key: 凭据中心')
       return h('span', { style: { ...styles.badge, ...styles.error } }, 'key: 未配置')
+    }
+
+    const cliState = () => call('/cli', { method: 'GET', headers: {} })
+    const cliSave = (payload) => call('/cli/set', { method: 'POST', body: JSON.stringify(payload) })
+
+    /** Pixmax CLI home / environment — editable from the plugin config page. */
+    function CliConfigCard() {
+      const [info, setInfo] = React.useState(null)
+      const [home, setHome] = React.useState('')
+      const [environment, setEnvironment] = React.useState('')
+      const [error, setError] = React.useState('')
+      const [message, setMessage] = React.useState('')
+      const [busy, setBusy] = React.useState(false)
+
+      const reload = React.useCallback(async () => {
+        try {
+          const next = await cliState()
+          setInfo(next)
+          setHome(next.home || '')
+          setEnvironment(next.environment || '')
+        } catch (failure) {
+          setError(String(failure.message || failure))
+        }
+      }, [])
+
+      React.useEffect(() => {
+        reload()
+      }, [reload])
+
+      const persist = async (nextHome, nextEnv) => {
+        setBusy(true)
+        setError('')
+        setMessage('')
+        try {
+          const next = await cliSave({ home: nextHome, environment: nextEnv })
+          setInfo(next)
+          setHome(next.home || '')
+          setEnvironment(next.environment || '')
+          setMessage('已保存；下次调用 pixmax 工具时生效。')
+        } catch (failure) {
+          setError(String(failure.message || failure))
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      return h(
+        'div',
+        { style: { ...styles.root, marginTop: 12 } },
+        h(
+          'div',
+          { style: styles.head },
+          h('span', { style: styles.title }, 'Pixmax CLI 路径'),
+          h('span', { style: styles.hint }, '留空用默认 ~/.pixmax-cli；路径错误只在调用工具时报错，不影响插件加载。'),
+        ),
+        h(
+          'div',
+          { style: styles.row },
+          h('span', { style: styles.mono }, info ? info.effectiveHome : '读取中…'),
+          info ? h('span', { style: { ...styles.badge, ...(info.exists ? styles.ok : styles.error) } }, info.exists ? '目录存在' : '目录不存在') : null,
+          info ? h('span', { style: styles.badge }, info.source === 'settings' ? '来自设置页' : '默认值') : null,
+        ),
+        h(
+          'div',
+          { style: styles.grid },
+          h(
+            'label',
+            { style: styles.label },
+            'CLI 主目录（pixmaxHome）',
+            h('input', {
+              style: styles.input,
+              value: home,
+              placeholder: info ? info.defaultHome : '',
+              onChange: (event) => setHome(event.target.value),
+            }),
+          ),
+          h(
+            'label',
+            { style: styles.label },
+            '环境（PIXMAX_ENV）',
+            h(
+              'select',
+              { style: styles.input, value: environment, onChange: (event) => setEnvironment(event.target.value) },
+              h('option', { value: '' }, '默认（cn）'),
+              h('option', { value: 'cn' }, 'cn'),
+              h('option', { value: 'global' }, 'global'),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { style: styles.row },
+          h(
+            'button',
+            { style: { ...styles.button, ...styles.primary }, type: 'button', disabled: busy, onClick: () => persist(home, environment) },
+            busy ? '保存中…' : '保存',
+          ),
+          h(
+            'button',
+            { style: styles.button, type: 'button', disabled: busy, onClick: () => { setHome(''); setEnvironment(''); persist('', '') } },
+            '恢复默认',
+          ),
+          h('span', { style: styles.hint }, '也可以在本行 config 里直接写 pixmaxHome。'),
+        ),
+        error ? h('div', { style: styles.error }, error) : null,
+        message ? h('div', { style: styles.ok }, message) : null,
+      )
+    }
+
+    function cliSummaryText() {
+      return 'Pixmax CLI 主目录与运行环境；留空用默认 ~/.pixmax-cli。'
     }
 
     function PixmaxWorkflowCard() {
@@ -433,6 +543,7 @@ window.__ModuleLoader__.load({
         error ? h('div', { style: styles.error }, error) : null,
         message ? h('div', { style: styles.ok }, message) : null,
         h('div', { style: styles.hint }, 'API key 存放在 DSH 凭据中心；同名环境变量优先（存在时设置页会拒绝写入）。'),
+        h(CliConfigCard, null),
       )
     }
 
@@ -447,6 +558,14 @@ window.__ModuleLoader__.load({
           ctx.slots.register(
             { name: 'plugins.row.config', key: 'dsh-pixmax-workflow#image-tools' },
             (slotProps) => (slotProps && slotProps.view === 'summary' ? summaryText() : h(PixmaxWorkflowCard, null)),
+          ),
+        )
+        // Row config keys are `<package name>#<row id from cordis.patch.yml>`.
+        // The pixmax-tools row gets its own config page with just the CLI path.
+        ctx.slots.inject('plugins.row.config', () =>
+          ctx.slots.register(
+            { name: 'plugins.row.config', key: 'dsh-pixmax-workflow#pixmax-tools' },
+            (slotProps) => (slotProps && slotProps.view === 'summary' ? cliSummaryText() : h(CliConfigCard, null)),
           ),
         )
         ctx.slots.inject('plugins.bundle.config', () =>

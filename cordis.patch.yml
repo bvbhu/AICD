@@ -1,121 +1,38 @@
-# Four independently switchable entries in this bundle:
-#   image-tools / video-tools / pixmax-tools  (root tool rows, off by default)
-#   preset-ai-video-workflow                 (the preset row below, on by default)
-# The three tool rows are off by default so other presets do NOT get them by
-# accident. Turn one on (DSH Settings → Plugins, or flip `disabled`) to expose it
-# to presets that do not declare the row themselves. The AI 视频工作流 preset
-# carries its own enabled copies, so its switch is independent of the root rows.
-# `pixmax-workflow-settings` is a default-on helper row (HTTP bridge + settings
-# card, no tools); it is not one of the four switchable components.
+# dsh-pixmax-workflow — bundle composition.
+#
+# The first row IS the bundle itself: its `name` is exactly the package name,
+# which is the only row dsh-client-modules mounts the browser half (settings
+# card) onto. It registers the HTTP bridge and no tools. It is NOT a switchable
+# component — turning it off removes the settings page and the bridge.
+#
+# The four independently switchable entries are:
+#   image-tools / video-tools / pixmax-tools  (off by default)
+#   preset-ai-video-workflow                 (declared in presets/, on by default)
+# A `config:` key with only comments parses as YAML null, so every row here
+# declares an explicit mapping.
 - insert:
+    - id: pixmax-workflow
+      name: 'dsh-pixmax-workflow'
+
     # Image tools (model_list / image_generation).
     - id: image-tools
       name: 'dsh-pixmax-workflow/image'
       disabled: true
+      config: {}
+
     - id: video-tools
       name: 'dsh-pixmax-workflow/video'
       disabled: true
       config:
         backend: auto
         # ffmpegPath: 'D:/path/to/ffmpeg.exe'
+
     - id: pixmax-tools
       name: 'dsh-pixmax-workflow/pixmax'
       disabled: true
       config:
-        # pixmaxHome: '~/.pixmax-cli'
+        # Empty = use the CLI home saved from the plugin settings card, then
+        # fall back to ~/.pixmax-cli. A wrong path never breaks bundle loading;
+        # it only produces a readable error when the tool is called.
+        pixmaxHome: ''
         # environment: cn
-    # Settings page for the 生图模型列表 (host JSON bridge + browser card).
-    # Enabled by default: it registers no tools and spends nothing — it only
-    # reads/writes <root>/settings.json and the DSH credential center.
-    - id: pixmax-workflow-settings
-      name: 'dsh-pixmax-workflow/settings'
-
-# AI video generation workflow preset: tools only. No persona and no extra
-# context files — just the image tools, Pixmax credit-free operations, and the
-# local ffmpeg video analysis tools, so the agent prompt stays clean.
-# This preset row is itself independently switchable (enabled by default).
-- insert:
-    - id: preset-ai-video-workflow
-      name: '@deepseek-ai/dsh-agent-preset'
-      config:
-        id: ai-video-workflow
-        name: AI 视频工作流
-        description: 'AI 视频生成工作流工具集：生图（模型列表 + 生成/改图）+ 零积分 Pixmax 操作 + ffmpeg 视频解析（探测、截帧、切点、总览图）。'
-        order: 20
-        plugins:
-          - id: agent-instructions
-            name: '@deepseek-ai/dsh-agent-instructions'
-            config:
-              maxBytes: 65536
-          - id: time-context
-            name: '@deepseek-ai/dsh-time-context'
-          - id: tool-bash
-            name: '@deepseek-ai/dsh-tool-bash'
-            disabled: !!js process.platform === 'win32'
-          - id: tool-pwsh
-            name: '@deepseek-ai/dsh-tool-pwsh'
-            disabled: !!js process.platform !== 'win32'
-          - id: tool-fs
-            name: '@deepseek-ai/dsh-tool-fs'
-            config:
-              applyPatch: false
-          - id: tool-fs-search
-            name: '@deepseek-ai/dsh-tool-fs-search'
-            config:
-              sampleOverCapGlobResults: false
-          - id: tool-jobs
-            name: '@deepseek-ai/dsh-tool-jobs'
-          - id: tool-ask-user
-            name: '@deepseek-ai/dsh-tool-ask-user'
-          - id: tool-todo
-            name: '@deepseek-ai/dsh-tool-todo'
-            config:
-              allowParallelInProgress: true
-          - id: tool-web
-            name: '@deepseek-ai/dsh-tool-web'
-            config:
-              fetch: true
-              searchTimeoutMs: 60000
-          # Image-model settings page: model list + API keys (no tools)
-          - id: pixmax-workflow-settings
-            name: 'dsh-pixmax-workflow/settings'
-          # Image tools: model_list / image_generation
-          - id: image-tools
-            name: 'dsh-pixmax-workflow/image'
-            config:
-              bridgeUrl: 'http://127.0.0.1:9777'
-              token: 'dsh-local'
-              reuseExistingTab: true
-          # Local video tools: video_probe / video_frames / video_scenes / video_sheet
-          - id: video-tools
-            name: 'dsh-pixmax-workflow/video'
-            config:
-              bridgeUrl: 'http://127.0.0.1:9777'
-              token: 'dsh-local'
-              backend: auto
-              # ffmpegPath: 'D:/path/to/ffmpeg.exe'
-          # Pixmax: every credit-free operation (submits are blocked by the tool)
-          - id: pixmax-tools
-            name: 'dsh-pixmax-workflow/pixmax'
-            config:
-              # pixmaxHome: '~/.pixmax-cli'
-              # environment: cn
-          - id: present
-            name: '@deepseek-ai/dsh-tool-present'
-          - id: compaction
-            name: cordis:group
-            group: true
-            isolate:
-              compaction: true
-              toolResultPruner: true
-            config:
-              - id: compaction-basic
-                name: '@deepseek-ai/dsh-compaction-basic'
-              - id: command-compact
-                name: '@deepseek-ai/dsh-command-compact'
-              - id: tool-result-pruner
-                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
-                config:
-                  thresholdChars: 8192
-                  headChars: 4096
-                  tailChars: 1024

@@ -166,6 +166,8 @@ const imageRunningRender = (jobId) => [
 ]
 
 export function apply(ctx, config = {}) {
+  // Cordis passes `config: null` for rows whose YAML config is empty.
+  config = config || {}
   const runtime = createRuntime(config)
   // One browser action at a time: the reused ChatGPT tab and the bridge are serial.
   let lock = Promise.resolve()

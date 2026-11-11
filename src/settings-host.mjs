@@ -7,6 +7,8 @@
  *   GET  /api/dsh-pixmax-workflow/state   → builtins + user models + default + key status
  *   POST /api/dsh-pixmax-workflow/save    → save the model list / default model
  *   POST /api/dsh-pixmax-workflow/key     → status | set | clear one model's API key
+ *   GET  /api/dsh-pixmax-workflow/cli     → Pixmax CLI home / environment (settings card)
+ *   POST /api/dsh-pixmax-workflow/cli/set → save the Pixmax CLI home / environment
  *   GET  /api/dsh-pixmax-workflow/health  → liveness and the settings file path
  *
  * Model definitions live in `<root>/settings.json`; API keys live in the DSH
@@ -25,8 +27,9 @@ import {
   saveImageSettings,
 } from './image-models.mjs'
 import { defaultPluginRoot } from './store.mjs'
+import { describeCliConfig, saveCliConfig } from './pixmax-config.mjs'
 
-export const name = 'dsh-pixmax-workflow-settings'
+export const name = 'dsh-pixmax-workflow'
 export const inject = ['webServer']
 
 const PREFIX = '/api/dsh-pixmax-workflow'
@@ -201,11 +204,18 @@ function buildRoutes({ ctx, config }) {
     route(`${PREFIX}/state`, 'GET', () => state()),
     route(`${PREFIX}/save`, 'POST', (body) => save(body)),
     route(`${PREFIX}/key`, 'POST', (body) => keyAction(body)),
+    route(`${PREFIX}/cli`, 'GET', () => ({ ok: true, ...describeCliConfig(root) })),
+    route(`${PREFIX}/cli/set`, 'POST', (body) => {
+      saveCliConfig(root, body)
+      return { ok: true, ...describeCliConfig(root) }
+    }),
     route(`${PREFIX}/health`, 'GET', () => ({ ok: true, root, path: loadImageSettings(root).path })),
   ]
 }
 
 export function apply(ctx, config = {}) {
+  // Cordis passes `config: null` for rows whose YAML config is empty.
+  config = config || {}
   ctx.inject(['webServer'], (sctx) => {
     sctx.effect(() => {
       const server = sctx.get('webServer')
@@ -219,5 +229,5 @@ export function apply(ctx, config = {}) {
       }
     }, 'pixmax-workflow: settings bridge')
   })
-  ctx.logger?.info?.(`[dsh-pixmax-workflow-settings] settings bridge registered under ${PREFIX}`)
+  ctx.logger?.info?.(`[dsh-pixmax-workflow] settings bridge registered under ${PREFIX}`)
 }

@@ -142,6 +142,8 @@ function renderSummary(value) {
 }
 
 export function apply(ctx, config = {}) {
+  // Cordis passes `config: null` for rows whose YAML config is empty.
+  config = config || {}
   const runtime = createRuntime(config)
 
   // ------------------------------------------------------------------ probe

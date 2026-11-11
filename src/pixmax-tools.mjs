@@ -24,6 +24,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { resolveSecret } from './credentials.mjs'
+import { loadCliConfig } from './pixmax-config.mjs'
 
 export const name = 'dsh-pixmax-workflow-pixmax'
 export const inject = ['tools']
@@ -83,6 +84,7 @@ const CLI_INSTALL_HINT = [
   '2. 默认装到 ~/.pixmax-cli；装在别处时设置环境变量 PIXMAX_CLI_HOME，或在插件配置里指定 pixmaxHome；',
   '3. 登录：pixmax auth login web 或 pixmax auth login token <TOKEN>，也可以设置 PIXMAX_BEARER_TOKEN（优先级最高）；需要时用 PIXMAX_ENV=cn | global 切换环境；',
   '4. 验证：pixmax action="doctor"、pixmax action="auth_whoami"、pixmax action="auth_credit"。',
+  '也可以在 DSH「设置 → 插件 → dsh-pixmax-workflow」的配置卡片里直接填写 CLI 主目录；路径写错不会在插件加载时报错，只会在调用本工具时提示。',
   '安装并登录后直接重试本工具即可，不需要重启 DSH。若 CLI 包由用户提供，请让用户给出安装包路径或安装后的主目录。',
 ].join('\n')
 
@@ -125,14 +127,17 @@ function readJson(path) {
 }
 
 function resolvePixmax(config = {}) {
-  const home = config.pixmaxHome || join(homedir(), '.pixmax-cli')
+  config = config || {}
+  // Priority: explicit row config > settings card (pixmax-cli.json) > default.
+  const fileConfig = loadCliConfig(config.root)
+  const home = config.pixmaxHome || fileConfig.home || join(homedir(), '.pixmax-cli')
   const launcher = readJson(join(home, 'launcher-config.json')) || {}
   const current = readJson(join(home, 'runtime', 'current.json')) || {}
   const python = config.pixmaxPython || launcher.installedPython || 'python'
   const runtimeDir = current.runtimeDir ? join(home, current.runtimeDir) : ''
   const entry = config.pixmaxEntry || (runtimeDir ? join(runtimeDir, 'entry.py') : '')
   const launcherPath = config.pixmaxPath || ''
-  return { home, python, entry, launcherPath, environment: config.environment || '' }
+  return { home, python, entry, launcherPath, environment: config.environment || fileConfig.environment || '' }
 }
 
 function quoteArg(value) {
@@ -539,6 +544,7 @@ async function installSkill(ctx, config, args) {
  * the plugin at an explicit entry or launcher are trusted and skip the probe.
  */
 function cliState(config, resolved) {
+  config = config || {}
   if (config.pixmaxEntry || config.pixmaxPath) return { ready: true }
   if (!existsSync(resolved.home)) return { ready: false, reason: `CLI 主目录不存在：${resolved.home}` }
   const hasLauncher = existsSync(join(resolved.home, 'launcher-config.json'))
@@ -605,6 +611,10 @@ async function runPixmax(ctx, config, argv, timeoutSec) {
 }
 
 export function apply(ctx, config = {}) {
+  // Cordis passes `config: null` for rows whose YAML config is empty.
+  // Never touch the config at registration time: a missing/wrong CLI path must
+  // only surface as a readable error when the tool is actually called.
+  config = config || {}
   ctx.tools.register({
     name: 'pixmax',
     description:
@@ -746,5 +756,5 @@ export function apply(ctx, config = {}) {
     },
   })
 
-  ctx.logger?.info?.(`[dsh-pixmax-workflow-pixmax] credit-free pixmax tool registered (home ${resolvePixmax(config).home})`)
+  ctx.logger?.info?.('[dsh-pixmax-workflow-pixmax] credit-free pixmax tool registered')
 }

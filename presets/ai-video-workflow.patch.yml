@@ -1,0 +1,87 @@
+# Agent preset declaration — one preset per patch file, listed in
+# package.json → dsh.bundle.patch (array), the same layout DSH's own
+# @deepseek-ai/dsh-web-app uses under presets/.
+#
+# This row is independently switchable (enabled by default). It only combines
+# tools — no persona, no platform binding, no skill files.
+- insert:
+    - id: preset-ai-video-workflow
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: ai-video-workflow
+        name: AI 视频工作流
+        description: 'AI 视频生成工作流工具集：生图（模型列表 + 生成/改图）+ 零积分 Pixmax 操作 + ffmpeg 视频解析（探测、截帧、切点、总览图）。'
+        order: 20
+        plugins:
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          # Image tools: model_list / image_generation
+          - id: image-tools
+            name: 'dsh-pixmax-workflow/image'
+            config:
+              bridgeUrl: 'http://127.0.0.1:9777'
+              token: 'dsh-local'
+              reuseExistingTab: true
+          # Local video tools: video_probe / video_frames / video_scenes / video_sheet
+          - id: video-tools
+            name: 'dsh-pixmax-workflow/video'
+            config:
+              bridgeUrl: 'http://127.0.0.1:9777'
+              token: 'dsh-local'
+              backend: auto
+              # ffmpegPath: 'D:/path/to/ffmpeg.exe'
+          # Pixmax: every credit-free operation (submits are blocked by the tool).
+          # CLI home comes from the plugin settings card unless overridden here.
+          - id: pixmax-tools
+            name: 'dsh-pixmax-workflow/pixmax'
+            config: {}
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024

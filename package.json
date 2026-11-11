@@ -3,9 +3,9 @@
   "version": "0.3.0",
   "description": "DSH plugin bundle for AI video generation workflows: image tools (model_list + image_generation), settings page, ffmpeg video analysis, and credit-free Pixmax CLI operations",
   "type": "module",
-  "main": "./src/image-tools.mjs",
+  "main": "./src/settings-host.mjs",
   "exports": {
-    ".": "./src/image-tools.mjs",
+    ".": "./src/settings-host.mjs",
     "./image": "./src/image-tools.mjs",
     "./video": "./src/video-tools.mjs",
     "./bridge": "./src/bridge.mjs",
@@ -17,6 +17,7 @@
     "./job-runner": "./src/job-runner.mjs",
     "./pixmax": "./src/pixmax-tools.mjs",
     "./settings": "./src/settings-host.mjs",
+    "./pixmax-config": "./src/pixmax-config.mjs",
     "./sensenova": "./src/sensenova.mjs",
     "./video-frames": "./src/video-frames.mjs",
     "./store": "./src/store.mjs",
@@ -32,6 +33,7 @@
     "locale/",
     "icon.svg",
     "cordis.patch.yml",
+    "presets/",
     "README.md"
   ],
   "engines": {
@@ -56,7 +58,10 @@
   ],
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/ai-video-workflow.patch.yml"
+      ]
     },
     "client": {
       "platform": "web",

@@ -1,308 +1,175 @@
 # 项目交接文档 — dsh-pixmax-workflow
 
-> 更新时间：2026-11-11 20:15 CST
+> 更新时间：2026-11-11 21:20 CST
 > 仓库：`D:\projects\dsh-pixmax-workflow`（git repo）
-> 远程：`origin → https://github.com/bvbhu/dsh-pixmax-workflow.git`（原名 `bvbhu/dsh-shotflow`，已改名；旧地址自动重定向）
-> 基线提交：`a93a0e3` feat(pixmax): 报错引导（CLI 安装配置 / 查阅 skill）+ 四条目清单与 GitHub 安装说明
-> 分支：main（默认），已推送并跟踪 `origin/main`
-> 安装状态：已通过 `dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow` 装到桌面版 profile（v0.3.0）
+> 远程：`origin → https://github.com/bvbhu/dsh-pixmax-workflow.git`（原 `bvbhu/dsh-shotflow` 已改名，旧地址自动重定向）
+> 分支：main（默认），已推送并跟踪 `origin/main`；最新提交见 `git log -1`
+> desktop：已通过 `dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow` 安装 v0.3.0；改动后需重新拉取并重启 DSH
 
 ---
 
-## 一、项目定位
+## 一、定位与组成
 
-DSH 插件 bundle（本地开发起家，现从 GitHub 安装，未发布 npm）。为 AI 视频生成工作流提供工具 + 一个只装工具的预设 + 一个设置页。
+DSH 插件 bundle（从 GitHub 安装，未发布 npm），为 AI 视频生成工作流提供 7 个工具、一个只装工具的预设、一个设置页。
 
-**四个可独立开关的条目**，各自在 DSH 插件/设置界面单独启用或关闭，互不影响：
+**bundle 主行**（`name: 'dsh-pixmax-workflow'`，默认开）**不是子组件**：它加载 `package.json` 的 `main`（`src/settings-host.mjs`），注册设置页 HTTP 桥，且 DSH 只把浏览器端（client 卡片）挂在「说明符恰为包名」的那一行上。关掉它会同时失去设置页与桥。
 
-| 条目 | 条目 id | 包路径 / 类型 | 内容 |
-|------|---------|---------------|------|
-| 图像工具 | `image-tools` | `dsh-pixmax-workflow/image` | `model_list`、`image_generation`（默认关） |
-| 视频工具 | `video-tools` | `dsh-pixmax-workflow/video` | `video_probe`、`video_frames`、`video_scenes`、`video_sheet`（默认关） |
-| Pixmax 工具 | `pixmax-tools` | `dsh-pixmax-workflow/pixmax` | `pixmax`（81 个 action + `command` 直通）（默认关） |
-| 「AI 视频工作流」预设 | `preset-ai-video-workflow` | `@deepseek-ai/dsh-agent-preset` | 只组合上面这些工具与基础文件/命令/任务能力，不带自定义 persona、不绑定平台、不依赖技能文件（默认开） |
+四个**可独立开关**的条目：
 
-**辅助行** `pixmax-workflow-settings`（`dsh-pixmax-workflow/settings`）默认启用，不注册任何工具，只提供设置页 HTTP 桥与插件页卡片；预设内部也会引用它。它不属于上面四个可独立开关的条目。
+| 条目 | 默认 | 内容 |
+| --- | --- | --- |
+| `image-tools` | 关 | `model_list`、`image_generation` |
+| `video-tools` | 关 | `video_probe`、`video_frames`、`video_scenes`、`video_sheet` |
+| `pixmax-tools` | 关 | `pixmax`（81 个 action + `command` 直通 + `skill_install`） |
+| `preset-ai-video-workflow` | 开 | 「AI 视频工作流」预设，只组合工具，无 persona、不绑平台、不依赖技能文件 |
 
-三个工具行默认关，是为了不污染其他预设；预设自带已启用的工具副本，所以关掉根级工具行不影响预设会话。
+预设声明放在 `presets/ai-video-workflow.patch.yml`，与 `cordis.patch.yml` 一起列在 `package.json → dsh.bundle.patch` 数组里（DSH 官方 `@deepseek-ai/dsh-web-app` 同款布局，一个预设一个 patch 文件）。预设自带已启用的工具副本，与根级工具行开关互不影响。
+
+`dsh-pixmax-workflow/settings` 这个 export 仍保留（向后兼容），但**不再作为插件行出现**——既不在根级，也不在预设的 `plugins` 里。
 
 ---
 
-## 二、目录结构
+## 二、真机问题与修复（2026-11-11 晚）
+
+| 现象 | 根因 | 修复 |
+| --- | --- | --- |
+| `pixmax-tools` 异常：`Cannot read properties of null (reading 'pixmaxHome')` | `cordis.patch.yml` 里 `config:` 后面只有注释，YAML 解析为 `null`；Cordis 把 `null` 直接传给 `apply(ctx, config = {})`，默认参数不生效 | 所有 `apply` 开头加 `config = config \|\| {}`（`image-tools` / `video-tools` / `settings-host` / `pixmax-tools`），`resolvePixmax` / `cliState` 同样兜底；patch 里每行都写显式映射（`config: {}` 或具体字段），YAML 解析已验证无 `config: null` |
+| 看不到设置页 | DSH 的 `dsh-client-modules` 只把包的浏览器半侧挂在「name 恰等于包名」的行上；原 patch 里所有行都是 `包名/子路径` 或内置包名，client 从未挂载 | 新增 bundle 主行 `name: 'dsh-pixmax-workflow'`，并把 `package.json` 的 `main` 指向 `src/settings-host.mjs`；client 注册 `plugins.bundle.config`（key = 包名）与两个 `plugins.row.config`（`#image-tools`、`#pixmax-tools`） |
+| 看不到 Agent 预设定义 | 预设声明混在主 patch 的第二个 `- insert:` 块里；DSH 官方约定每个预设一个独立 patch 文件并在 `dsh.bundle.patch` 数组列出；此外 `pixmax-tools` 行启动失败也会影响 bundle 状态 | 拆出 `presets/ai-video-workflow.patch.yml`（单个 `- insert:`），`dsh.bundle.patch` 改为数组；预设内移除 `pixmax-workflow-settings` 子行；预设引用的 15 个内置包均已核对存在 |
+| pixmax 路径无法在插件页配置 | 原先只能手写 `cordis.patch.yml` 的 `config.pixmaxHome` | 设置页卡片新增「Pixmax CLI 路径」区（主目录 + `PIXMAX_ENV`），通过新增的 `/cli` / `/cli/set` 端点读写 `<root>/pixmax-cli.json`；`pixmax-tools` 行也有独立配置入口，并保留 `config.pixmaxHome` 覆盖 |
+| 配置缺失/错误在加载期就报错 | 注册期日志会调 `resolvePixmax(config)` | 注册期完全不碰配置；CLI 检测（`cliState` / spawn 失败）只在 `runPixmax` 调用时执行，错误里附「安装 → 登录 → 环境变量 → 验证」引导，并提示可在设置页改路径 |
+
+---
+
+## 三、目录
 
 ```
 D:\projects\dsh-pixmax-workflow\
-├─ package.json          # dsh-pixmax-workflow 0.3.0；main → ./src/image-tools.mjs
-├─ cordis.patch.yml      # 四个可独立开关的条目（3 个默认关的工具行 + 默认开的预设）+ 设置页辅助行
-├─ icon.svg              # 插件图标
+├─ package.json          # main → src/settings-host.mjs；dsh.bundle.patch 为数组
+├─ cordis.patch.yml      # bundle 主行 + 三个可独立开关的工具行（默认关）
+├─ presets/
+│  └─ ai-video-workflow.patch.yml   # 预设声明（单独 patch 文件）
 ├─ client/
-│  └─ pixmax-workflow-settings.js   # 插件页生图模型设置卡片（React.createElement，无构建）
-├─ locale/
-│  ├─ en.json
-│  └─ zh.json
+│  └─ pixmax-workflow-settings.js  # 设置卡片（生图模型 + Pixmax CLI 路径），无构建
+├─ locale/ icon.svg
 ├─ src/
-│  ├─ image-tools.mjs    # 注册 model_list / image_generation；inject=['tools']
-│  ├─ image-models.mjs   # 生图模型注册表 + <root>/settings.json 读写 + 内置模型
-│  ├─ image-api.mjs      # OpenAI Images 兼容端点客户端（JSON data-URL / multipart）
-│  ├─ sensenova.mjs      # SenseNova 兼容包装（复用 image-api）
-│  ├─ settings-host.mjs  # 设置页 Host 桥（inject=['webServer']）+ /api/dsh-pixmax-workflow/*
-│  ├─ credentials.mjs    # DSH 凭据中心 + 环境变量；凭据名前缀 PIXMAX_WORKFLOW_IMAGE_*
-│  ├─ pixmax-tools.mjs   # 注册 pixmax 工具；81 个 action + skill_install + guard + 报错引导
-│  ├─ video-tools.mjs    # 注册 video_probe / frames / scenes / sheet
-│  ├─ video-frames.mjs   # 无 ffmpeg 时 Chrome 回退（回环 HTTP + canvas 截帧）
-│  ├─ ffmpeg.mjs         # ffmpeg 二进制探测 + spawn 包装
-│  ├─ bridge.mjs         # DSH Browser Control HTTP 客户端
-│  ├─ chatgpt.mjs        # ChatGPT 网页驱动（generateImage；sendPrompt 已随 chat-tools 删除）
-│  ├─ job-runner.mjs     # background=true 的 DSH ctx.jobs 包装
-│  └─ store.mjs          # 路径（<root>/images、conversations）、settings.json
-└─ .state/tmp/           # 测试脚本（gitignore，不入 git）
-   └─ smoke.mjs          # 77 项自动检查，全部通过
+│  ├─ settings-host.mjs      # 主行：6 个 HTTP 端点
+│  ├─ pixmax-config.mjs      # <root>/pixmax-cli.json 读写（本次新增）
+│  ├─ image-tools.mjs / image-models.mjs / image-api.mjs / sensenova.mjs
+│  ├─ video-tools.mjs / ffmpeg.mjs / video-frames.mjs
+│  ├─ pixmax-tools.mjs       # pixmax 工具 + guard + 报错引导
+│  ├─ credentials.mjs / bridge.mjs / chatgpt.mjs / job-runner.mjs / store.mjs
+└─ .state/tmp/smoke.mjs     # 85 项自动检查（gitignore，不入 git）
 ```
 
-**已删除**：`src/chat-tools.mjs`（gpt_ask / gpt_last）、`bin/gpt.mjs`、`bin/gpt.cmd`。ChatGPT 网页对话工具与独立 CLI 均已移除。
-
-**gitignore 的私有材料**：`skills/`、`__*`、`.state/`、`conversations/`、`images/`、`video-frames/`、`node_modules/`、`*.log`。仓库不包含任何技能文件。
+`skills/`、`__*`、`.state/`、`conversations/`、`images/`、`video-frames/` 均为 gitignore 的私有材料。
 
 ---
 
-## 三、工具清单（7 个）
+## 四、配置与设置页
 
-### image-tools
-
-| 工具 | 参数（必填加粗） | 返回 |
-|------|-----------------|------|
-| `model_list` | — | 默认模型 + 每个 model 的 id/类型/端点/key 状态 |
-| `image_generation` | **prompt**、model、ref[]、out、size、format(png/jpeg/webp)、watermark、timeout、background | 图片绝对路径、model、channel、宽高 |
-
-- `model` 取值：`browser/gpt-image-2`（ChatGPT 网页）或任意 `provider/modelid`（OpenAI Images 兼容）
-- 不传 `model` → 用设置页的默认模型
-- `background: true` → 立即返回 `{ status:'running', job_id }`，后台生成
-
-### video-tools
-
-| 工具 | 参数 | 返回 |
-|------|------|------|
-| `video_probe` | **path** | duration、width/height、fps、codec、backend |
-| `video_frames` | **path**、every/times/frames 三选一、from、to、max_frames(默认12)、width、quality、out、attach、backend | 帧文件路径 + 元数据，附加到会话 |
-| `video_scenes` | **path**、threshold、max_scenes、from、to | 镜头切点列表（ffmpeg） |
-| `video_sheet` | **path**、fps、cover、columns、rows、width、out、attach | 总览图，附加到会话 |
-
-### pixmax-tools
-
-单一工具 `pixmax`，两种调用：
-
-```text
-# ① action 简写（81 个，详见 README）
-pixmax action="node_get" selector="<uuid>"
-pixmax action="node_create" selector="EP2-1组" type="GENERATE_VIDEO" prompt="..." dry_run=false
-
-# ② command 直通
-pixmax command=["node","get","EP2-1组"]
-```
-
-公共参数：selector、items[]、prompt、model、set[]、left_set[]、dry_run(默认 true)、file、project、out、data、plan_file、timeout…
-
-**硬拦截**：`--run`/`--submit`/`--execute`/`--live` 一律拒绝；`tasks submit-batch`/`group run` 直接拒绝；`video generate-final` 仅允许带 `--dry-run`；`raw` 仅 GET；`repl` 拒绝。
-
-**skill_install**：`pixmax action="skill_install" out="<skills 根目录>"` 把 CLI 自带的 SKILL.md + references 复制进 DSH skills 目录。默认目标 `~/.dsh/skills/pixmax-cli/`。
-
-**面向模型的报错引导（本次新增）**：
-
-| 触发条件 | 返回 |
-|----------|------|
-| CLI 主目录不存在 / 安装不完整 / spawn 失败 / launcher 不在 PATH | `ok:false` + `hint`：**完整的安装 → 登录 → 环境变量 → 验证步骤**（install.ps1 / install.sh、`PIXMAX_CLI_HOME`、`pixmaxHome`、`auth login`、`PIXMAX_BEARER_TOKEN`、`PIXMAX_ENV`、`doctor`/`auth_whoami`） |
-| 参数/用法错误：缺参、未知 action、非法 flag、被拦截的提交命令、CLI 自身 argparse 报错 | `ok:false` + `hint`：**提示先查阅 `pixmax-cli` 技能**（`~/.dsh/skills/pixmax-cli/SKILL.md` + references），并给出 `skill_install` / `skill_show` / `skill_prompt` 等落地手段 |
-
-实现要点：`src/pixmax-tools.mjs` 用 `UsageError` / `CliMissingError` 分类，`execute` 的 catch 按类型挂 `hint`；`output.schema` 增加 `hint` 字段，`render` 以 `[操作引导]` 段显示，因此 CLI 返回 JSON 错误时提示也不会被吞掉。顺带修掉 `parameters.properties.name` 的重复键（原本后一个描述覆盖了「项目文件/目录名」）与 `canvas_node` 的 `args.command_name || args.command_name` 笔误。
-
----
-
-## 四、设置页
-
-**Settings → 插件 → Pixmax Workflow**（`pixmax-workflow-settings` 辅助行默认启用）
-
-- 浏览器渠道固定为 `browser/gpt-image-2`，其他 OpenAI 兼容端点按 `provider/modelid` 添加
-- 内置模型（3 个）：`browser/gpt-image-2`、`sensenova/sensenova-u1.5-lite`、`sensenova/sensenova-u1.5-fast`
-- 每个端点保存/删除 API key（写入 DSH 凭据中心，凭据名前缀 `PIXMAX_WORKFLOW_IMAGE_*`）
-- 页面只显示"是否已配置 + 来源"，**永远不显示值**
-- 存储路径：模型列表 `<root>/settings.json`，key 在凭据中心
-
-**HTTP 桥**（仅同源请求接受）：
+**设置 → 插件 → dsh-pixmax-workflow**（bundle 配置区）；`image-tools`、`pixmax-tools` 行各有自己的配置入口。
 
 | 路径 | 方法 | 说明 |
-|------|------|------|
-| `/api/dsh-pixmax-workflow/state` | GET | 读取当前模型列表 + key 状态 |
-| `/api/dsh-pixmax-workflow/save` | POST | 保存模型列表（校验 id 格式、去重、必填字段） |
-| `/api/dsh-pixmax-workflow/key` | POST | `{ action: 'set'|'clear', modelId, value }` |
+| --- | --- | --- |
+| `/api/dsh-pixmax-workflow/state` | GET | 模型列表、内置模型、key 状态 |
+| `/api/dsh-pixmax-workflow/save` | POST | 保存模型列表（校验 id / 去重 / 必填） |
+| `/api/dsh-pixmax-workflow/key` | POST | `set` / `clear` / `status` 单个模型的 key |
+| `/api/dsh-pixmax-workflow/cli` | GET | CLI 主目录、环境、默认路径、目录是否存在 |
+| `/api/dsh-pixmax-workflow/cli/set` | POST | 保存 CLI 主目录与 `PIXMAX_ENV`（只接受 cn/global） |
 | `/api/dsh-pixmax-workflow/health` | GET | 健康检查 |
 
----
+仅同源请求接受（跨站 403、错误方法 405）。模型列表存 `<root>/settings.json`，key 存 DSH 凭据中心（`PIXMAX_WORKFLOW_IMAGE_*`），CLI 配置存 `<root>/pixmax-cli.json`。页面只显示「是否配置 + 来源」，永不显示值。
 
-## 五、Pixmax CLI 安装与配置
-
-工具依赖本机已装好的 Pixmax CLI（`~/.pixmax-cli`，含 launcher / runtime / config.json）。插件不打包、不自动安装 CLI。**本机已安装**（`~/.pixmax-cli` 存在，runtime 可用），但 `~/.dsh/skills/` 里目前只有 `qmk-build`，`pixmax-cli` 技能尚未装。
-
-### 安装
-
-1. 拿到 CLI 包（Pixmax 官方渠道提供的 zip）
-2. 运行包里的安装脚本：
-   - Windows：`powershell -ExecutionPolicy Bypass -File scripts\install.ps1`
-   - macOS/Linux：`bash scripts/install.sh`
-3. 默认装到 `~/.pixmax-cli`；换位置设环境变量 `PIXMAX_CLI_HOME` 或插件配置 `pixmaxHome`
-4. 安装器写好 `launcher-config.json`（含 `installedPython`、channel、manifest URL、公钥）
-
-### 登录（三选一）
-
-- 浏览器登录：`pixmax auth login web`
-- token 登录：`pixmax auth login token <TOKEN>`
-- 环境变量：`PIXMAX_BEARER_TOKEN`（优先级最高）
-
-### 环境选择
-
-`PIXMAX_ENV=cn` 或 `global`（默认 cn）。
-
-### 验证
-
-```text
-pixmax action="doctor"                  # 本地自检
-pixmax action="doctor" online=true      # 联网校验（不花积分）
-pixmax action="auth_whoami"             # 当前账号
-pixmax action="auth_credit"             # 剩余额度
-pixmax action="update_status"           # CLI 是否有更新
-```
-
-### 常见问题
-
-- **启动器卡在 Runtime 下载**：工具已绕过（直接调 `runtime/current.json` 指向的 `entry.py`）。手动修：`update_retry` / `update_repair`
-- **CLI 没装 / 装坏**：工具在 spawn 之前检查主目录与 `launcher-config.json` / `runtime/current.json`，返回带完整安装步骤的 `hint`，不再只给一句 ENOENT
-- **token 失效**：重新 `auth login` 或更新 `PIXMAX_BEARER_TOKEN`
-- **参数写错**：返回 `hint` 提示查 `pixmax-cli` 技能，别重复猜参数
-
-### 安装 CLI skill
-
-```text
-pixmax action="skill_install"                       # 装到 ~/.dsh/skills/pixmax-cli/
-pixmax action="skill_install" out="D:/proj/.dsh/skills"   # 装到项目级技能目录
-```
-
-装好后重启 DSH，会话里即可看到 `pixmax-cli` 技能。
+**CLI 路径优先级**：行 `config.pixmaxHome` > 设置页 `<root>/pixmax-cli.json` > 默认 `~/.pixmax-cli`；环境同理（`config.environment` > 文件 > 空）。
 
 ---
 
-## 六、安装插件
+## 五、工具与约束
 
-从 GitHub 安装到桌面版 profile（**已执行**）：
+| 工具 | 要点 |
+| --- | --- |
+| `model_list` | 默认模型 + 每个 model 的 id / 端点 / key 状态 |
+| `image_generation` | `prompt` 必填；`browser/*` 走 ChatGPT 网页，其他走 OpenAI Images 兼容端点；`background: true` 走 `ctx.jobs` |
+| `video_probe` / `video_frames` / `video_scenes` / `video_sheet` | 主后端 ffmpeg，无 ffmpeg 时探测/截帧回退 Chrome；帧与总览图附加到会话 |
+| `pixmax` | `action` 简写（81 个）或 `command` 数组直通；固定加 `--json` |
+
+**硬拦截**：`--run/--submit/--execute/--live`、裸提交命令（`tasks submit-batch`、`group run`）、非 GET 的 `raw`、`repl`；`video generate-final` 只允许带 `--dry-run`；创建/修改类默认 `--dry-run`。
+
+**面向模型的报错引导**（`src/pixmax-tools.mjs`）：`UsageError` / `CliMissingError` 分类，`execute` 的 catch 按类型挂 `hint`，`output.schema` 有 `hint` 字段，`render` 显示 `[操作引导]`。参数错误提示查阅 `pixmax-cli` 技能；CLI 缺失给出安装、登录、环境变量、验证四步。
+
+`skill_install` 把 CLI 自带的 SKILL.md + references 复制进 `~/.dsh/skills/pixmax-cli/`，装完需重启 DSH。
+
+---
+
+## 六、安装与升级
 
 ```powershell
 dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow
-# pnpm 会把依赖写进 desktop/package.json，并自动把 "dsh-pixmax-workflow" 加进 dsh.profile.bundles
+# 首次安装会自动把 "dsh-pixmax-workflow" 加进 desktop/package.json 的 dsh.profile.bundles
+# 升级已有安装：dsh plugin --profile desktop update dsh-pixmax-workflow
 # 重启 DSH 后生效
 ```
 
-本次安装的实际结果：
+本地开发可 `dsh plugin --profile <profile> add link:D:/projects/dsh-pixmax-workflow`。
 
-- `~/.dsh/profiles/desktop/package.json` → `"dsh-pixmax-workflow": "git+https://github.com/bvbhu/dsh-pixmax-workflow.git"`（v0.3.0）
-- `dsh.profile.bundles` 末尾已自动加入 `"dsh-pixmax-workflow"`
-- `~/.dsh/profiles/desktop/node_modules/dsh-pixmax-workflow/` 含 `src/`、`client/`、`locale/`、`cordis.patch.yml`、`icon.svg`、`README.md`，并已包含本次新增的报错引导代码
-- **需要重启 DSH** 才能加载新 bundle
-
-本地开发也可链接目录：`dsh plugin --profile <profile> add link:D:/projects/dsh-pixmax-workflow`；CLI 安装被拒时用 DSH 插件页/管理器安装同一目录或压缩包。
-
-**启用子组件**：在 DSH 设置界面分别开关四个条目；三个工具行默认关，预设默认开且自带工具副本，其他预设里默认没有这些工具。
+desktop profile 的 `cordis.patch.yml` 里已有 `- id: pixmax-tools / video-tools / image-tools disabled: false`（手动启用过三个工具行）；这些覆盖行不带 `config`，不影响设置页写的 CLI 路径。
 
 ---
 
 ## 七、验证状态
 
 | 检查项 | 结果 |
-|--------|------|
-| `node --check`（所有 .mjs/.js） | ✅ 0 失败 |
-| 自动检查（`.state/tmp/smoke.mjs`） | ✅ **77/77 通过** |
-| 语法（client/pixmax-workflow-settings.js） | ✅ |
-| 代码内旧命名残留（shotflow / ShotFlow） | ✅ 零残留（仅文档里的历史说明保留旧仓库名） |
+| --- | --- |
+| `node --check`（src + client 全部） | ✅ 0 失败 |
+| `.state/tmp/smoke.mjs` | ✅ **85/85** |
+| 两个 patch 文件 YAML 解析 | ✅ 无 `config: null`；预设 15 个 plugins，无 settings 子行 |
+| preset 引用的内置包 | ✅ 全部存在于 DSH runtime |
 | 远程仓库改名 + 推送 | ✅ `bvbhu/dsh-pixmax-workflow`，main 与 origin/main 同步 |
-| 从 GitHub 安装到 desktop | ✅ 依赖 + bundles 均已登记 |
+| 从 GitHub 安装到 desktop | ✅ 依赖 + bundles 已登记 |
 
-smoke.mjs 覆盖：
-
-- 模型注册表：内置默认、保存/读取/去重、key 状态、浏览器无需 key
-- 设置页桥：GET/POST/save/key/health、跨站 403、方法 405、浏览器 key 拒绝
-- pixmax guard：9 类应拒、7 类应放行、抛 `UsageError`
-- **报错引导（本次新增 7 项）**：缺参 / 未知 action / 拦截命令 / 无 action 均带技能提示；CLI 主目录缺失返回安装+登录引导；`render` 显示 `[操作引导]`
-- `skill_install`：本机 CLI 已装时按成功路径断言，CLI 缺失时按"返回安装引导"断言（双分支，不再依赖本机是否装 CLI）
-- 工具注册：7 个工具（model_list、image_generation、pixmax、video_probe、video_frames、video_scenes、video_sheet）
-- 设置页卡片：桥前缀、slot key、client 源检查
+smoke 覆盖：模型注册表、设置桥（含 `/cli`、`/cli/set`、非法环境 400）、`guardArgv` 9 拒 7 放、`UsageError` 分类、报错引导文案与 render、`apply(ctx, null)` 四个模块不抛错、设置页写入的 CLI 路径能被 `resolvePixmax` 读到、`skill_install` 双分支（本机 CLI 装/没装都通过）、7 个工具注册、client slot key。
 
 ---
 
-## 八、设计决策与已知限制
+## 八、已知限制
 
-### 设计取舍
-
-- 浏览器渠道走 DSH-Browser-Control 扩展 + 桥接，优先复用已打开的 chatgpt.com 标签页（避免新标签页被 Cloudflare 拦截），所有浏览器调用串行
-- 生图按模型 id 分派：browser/* 走网页，其他走 OpenAI 兼容端点；两者复用同一套 background / 保存 / 附加逻辑
-- 模型列表与 key 分开存放（模型是用户数据，key 是秘密）
-- 视频主后端是 ffmpeg；Chrome 回退只用于没有 ffmpeg 的应急
-- Pixmax 暴露所有零积分操作，但提交生成做成硬拦截；规划类命令默认 --dry-run
-- 四个条目独立开关，预设只组合工具，不带 persona、不绑定平台
-- 后台任务走 DSH ctx.jobs，完成后用 job_output 取结果
-- **报错按"模型能不能自救"分类**：CLI 缺失给安装/配置流程，用法错误指向技能文档，而不是把原始 stderr 丢给模型
-
-### 已知限制
-
-- **浏览器渠道分钟级延迟**；可能被 Cloudflare 拦（与浏览器指纹/IP 相关）
-- **Pixmax 工具依赖本机 CLI**（不自动安装）；tasks_wait 可能长时间阻塞（默认 120s，最大 600s）
-- **设置页 key 写入的是 DSH 凭据中心**；环境变量存在时拒绝写入
-- **真实 DSH 会话的端到端验证尚未完成**：插件已装到 desktop profile，但设置页卡片、浏览器渠道生图、Pixmax 真机命令与 `skill_install` 落盘，要重启 DSH 后由使用者跑真实任务确认；smoke.mjs 只覆盖逻辑单元
-- **本机 CLI 已可 spawn Python**：早期会话里"EPERM 无法启动 Python"的限制已解除，`skill files` / `skill_install` 在 smoke 中走的是真实 CLI 成功路径；但 DSH 会话内的表现仍未验证
-- **skill_install 需要 Pixmax CLI 已安装**；CLI 返回的 skill root 为空/不存在时报可读错误并给安装引导
+- 浏览器渠道分钟级延迟，可能被 Cloudflare 拦；所有浏览器调用串行。
+- `pixmax` 依赖本机 CLI（不打包、不自动安装）；`tasks_wait` 默认 120s、最大 600s；提交生成仍需到 Pixmax 界面手动点。
+- 设置页 key 写入 DSH 凭据中心；同名环境变量存在时拒绝写入。
+- **真机端到端仍需复测**：本轮修复的是加载/挂载/配置链路，设置页卡片、预设列表、生图与视频工具在真实 DSH 会话里的表现要重启后由使用者确认。
+- 本机 `~/.pixmax-cli` 已装且可 spawn Python；`~/.dsh/skills/` 里目前只有 `qmk-build`，`pixmax-cli` 技能尚未安装。
 
 ---
 
-## 九、真机测试清单（重启 DSH 后执行）
+## 九、重启 DSH 后的复测清单
 
-1. 新建会话选 **「AI 视频工作流」** 预设，确认 `model_list` / `image_generation` / `pixmax` / `video_*` 工具都在
-2. **参数错误引导**：故意调 `pixmax action="node_get"`（缺 selector），确认返回里有「查阅 pixmax-cli 技能」提示
-3. **CLI 缺失引导**：临时把 pixmaxHome 指到不存在目录再调 `pixmax action="doctor"`，确认返回安装/登录步骤
-4. **skill_install**：跑 `pixmax action="skill_install"`，确认 `~/.dsh/skills/pixmax-cli/` 落盘且重启后 DSH 能发现技能
-5. **设置页卡片**：Settings → 插件 → Pixmax Workflow，确认模型列表与 key 状态可见、保存可用
-6. **浏览器渠道生图**：`image_generation` 走 `browser/gpt-image-2`，确认出图；端点渠道用任一 OpenAI 兼容模型验证
-7. **视频工具**：给一段本地视频跑 `video_probe` / `video_frames` / `video_sheet`
-8. **四个条目开关**：在 DSH 插件页分别开关三个工具行与预设，确认互不影响
-
-可选优化：设置页卡片加"测试连接"按钮（调 provider models list 验证 key）；Pixmax 增加批量节点创建的 action 简写。
+1. 设置 → 插件 → **dsh-pixmax-workflow**：能看到配置卡片（生图模型 + Pixmax CLI 路径）；`pixmax-tools` 行有「配置」入口。
+2. 新建会话的预设列表里能看到 **「AI 视频工作流」**；选它后 7 个工具齐全。
+3. 在设置页把 CLI 路径改成错误值：插件不报异常，调用 `pixmax action="doctor"` 才返回安装引导；改回后能跑通。
+4. `pixmax action="node_get"`（缺 selector）→ 返回「查阅 pixmax-cli 技能」提示。
+5. `pixmax action="skill_install"` → `~/.dsh/skills/pixmax-cli/` 落盘，重启后 DSH 能发现技能。
+6. 生图（浏览器渠道 + 一个兼容端点）、本地视频 `video_probe` / `video_frames` / `video_sheet`。
+7. 分别开关三个工具行与预设，确认互不影响；**不要关主行**。
 
 ---
 
-## 十、Git 历史
+## 十、Git 与远程
 
-```
-a93a0e3 feat(pixmax): 报错引导（CLI 安装配置 / 查阅 skill）+ 四条目清单与 GitHub 安装说明
-c5334cb chore: 移除残留 bin/gpt.cmd
-9ffec5a docs: 项目交接文档（dsh-pixmax-workflow 重命名与清理）
-f709b83 refactor!: 更名 dsh-pixmax-workflow；移除 gpt-chat 与 gpt CLI；Pixmax 增加 skill_install
-4904f44 refactor!: gpt-tools 拆成 gpt-chat 与 image-tools；工具改名 model_list / image_generation
-a657b94 feat(image): 生图模型设置页 + 模型列表工具 image_model_list；pixmax 覆盖全部零积分操作
-eb9c143 feat: 复用 ChatGPT 标签页、SenseNova 生图渠道、Pixmax 只读工具与凭据中心
-fd203d7 refactor!: 项目更名为 ShotFlow（dsh-shotflow），预设改为只装工具的 AI 视频工作流
-```
-
-**已推送到远程**：`origin/main` 与 `main` 同步（`eb9c143..a93a0e3` 一次推送完成）。远程仓库已由 `bvbhu/dsh-shotflow` 改名为 `bvbhu/dsh-pixmax-workflow`，旧 URL 由 GitHub 自动重定向。另有 `legacy-history` 分支未包含新改动。
+- 远程仓库已由 `bvbhu/dsh-shotflow` 改名为 `bvbhu/dsh-pixmax-workflow`，本地 `origin` 同步更新，旧 URL 自动重定向。
+- 主要提交：`a93a0e3`（报错引导 + 四条目清单）、`e27e4e8`（交接文档）、本轮修复提交（见 `git log -1`）。
+- 另有 `legacy-history` 分支，不含新改动。
 
 ---
 
 ## 附：关键文件行数
 
 ```
-src/image-tools.mjs       ~320 行  # model_list + image_generation
-src/image-models.mjs      ~218 行  # 模型注册表
-src/image-api.mjs         ~252 行  # OpenAI Images 兼容端点
-src/settings-host.mjs     ~223 行  # 设置页 HTTP 桥
-src/credentials.mjs       ~180 行  # 凭据中心（前缀 PIXMAX_WORKFLOW_IMAGE_*）
-src/pixmax-tools.mjs      ~790 行  # 81 个 action + skill_install + guard + 报错引导
-src/video-tools.mjs       ~450 行  # video_probe / frames / scenes / sheet
-src/ffmpeg.mjs            ~200 行  # ffmpeg 探测与 spawn
-client/pixmax-workflow-settings.js  ~460 行  # 设置页卡片
-README.md                 ~445 行  # 完整文档
-cordis.patch.yml          ~120 行  # 四条目 + 辅助行
+src/pixmax-tools.mjs      ~800 行   # 81 action + guard + 报错引导
+src/settings-host.mjs     ~230 行   # 6 个 HTTP 端点
+src/pixmax-config.mjs      ~65 行   # CLI 配置文件读写
+client/pixmax-workflow-settings.js  ~570 行  # 生图模型 + CLI 路径卡片
+cordis.patch.yml           ~40 行   # 主行 + 三个工具行
+presets/ai-video-workflow.patch.yml ~90 行   # 预设声明
+README.md                 ~110 行   # 已大幅精简
 ```
