@@ -45,8 +45,8 @@ dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow
 | `model_list` | 模型列表、默认模型、key 状态 |
 | `image_generation` | 生图/改图；`prompt` 必填，不传 `model` 用默认，`background: true` 走后台 job |
 | `video_probe` | 时长 / 分辨率 / 帧率 / 编码 |
-| `video_frames` | 按间隔、时间点或帧号截帧（默认上限 12 帧），图片附加到会话 |
-| `video_scenes` | ffmpeg 镜头切点 |
+| `video_frames` | 按间隔、时间点或帧号截帧（默认上限 12 帧；`max_frames` 是上限不是配额） |
+| `video_scenes` | ffmpeg 镜头切点，返回 `count` 与时间列表（0 个也会明确报 `切点 0 个`） |
 | `video_sheet` | 总览图 |
 | `pixmax` | Pixmax CLI 的全部零积分操作 |
 
@@ -58,6 +58,8 @@ pixmax command=["node","get","EP2-1组"]
 **硬拦截**：`--run` / `--submit` / `--execute` / `--live`、裸提交命令（`tasks submit-batch`、`group run`）、非 GET 的 `raw`、`repl` 一律拒绝；`video generate-final` 只允许带 `--dry-run`；创建/修改类默认 `--dry-run`（`dry_run: false` 才是真正的免费写入）。
 
 **报错引导**：参数或用法错误 → 提示查阅 `pixmax-cli` 技能；CLI 未安装 / 无法启动 → 返回「安装 → 登录 → 环境变量 → 验证」完整步骤。提示在返回值的 `hint` 字段，渲染为 `[操作引导]` 段。
+
+**参数保护**：`pixmax node update` 会**整体替换**节点 params——只传 `--prompt` 会把 `model`/`duration`/`resolution` 等全部丢掉（CLI 从空对象重建）。工具在 `node_update` 前先读节点现有 params 并自动回传，只有显式写进 `set` 的键才覆盖；`merge_params: false` 可关闭这层保护。
 
 ## Pixmax CLI
 
@@ -93,7 +95,7 @@ pixmax action="skill_install"  # 把 CLI 自带 SKILL.md + references 装进 ~/.
 
 ```powershell
 node --check src/*.mjs
-node .state/tmp/smoke.mjs    # 85/85：模型注册表、设置桥（含 CLI 配置）、guard、报错引导、工具注册
+node .state/tmp/smoke.mjs    # 92/92：模型注册表、设置桥（含 CLI 配置）、guard、报错引导、params 合并、工具注册
 ```
 
 `.state/`、`conversations/`、`images/`、`video-frames/`、`skills/`、`__*` 均为私有工作材料，`.gitignore` 已排除。

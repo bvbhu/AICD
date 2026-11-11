@@ -59,7 +59,7 @@ D:\projects\dsh-pixmax-workflow\
 │  ├─ video-tools.mjs / ffmpeg.mjs / video-frames.mjs
 │  ├─ pixmax-tools.mjs       # pixmax 工具 + guard + 报错引导
 │  ├─ credentials.mjs / bridge.mjs / chatgpt.mjs / job-runner.mjs / store.mjs
-└─ .state/tmp/smoke.mjs     # 85 项自动检查（gitignore，不入 git）
+└─ .state/tmp/smoke.mjs     # 92 项自动检查（gitignore，不入 git）
 ```
 
 `skills/`、`__*`、`.state/`、`conversations/`、`images/`、`video-frames/` 均为 gitignore 的私有材料。
@@ -134,13 +134,13 @@ desktop profile 的 `cordis.patch.yml` 里已有 `- id: pixmax-tools / video-too
 | 检查项 | 结果 |
 | --- | --- |
 | `node --check`（src + client 全部） | ✅ 0 失败 |
-| `.state/tmp/smoke.mjs` | ✅ **88/88** |
+| `.state/tmp/smoke.mjs` | ✅ **92/92** |
 | 两个 patch 文件 YAML 解析 | ✅ 无 `config: null`；预设 15 个 plugins，无 settings 子行 |
 | preset 引用的内置包 | ✅ 全部存在于 DSH runtime |
 | 远程仓库改名 + 推送 | ✅ `bvbhu/dsh-pixmax-workflow`，main 与 origin/main 同步 |
 | 从 GitHub 安装到 desktop | ✅ 依赖 + bundles 已登记 |
 
-smoke 覆盖：模型注册表（内置只有 browser、SenseNova 必须作为用户端点才能解析）、设置桥（含 `/cli`、`/cli/set`、非法环境 400）、`guardArgv` 9 拒 7 放、`UsageError` 分类、报错引导文案与 render、`apply(ctx, null)` 四个模块不抛错、设置页写入的 CLI 路径能被 `resolvePixmax` 读到、`skill_install` 双分支（本机 CLI 装/没装都通过）、7 个工具注册、client slot key。
+smoke 覆盖：模型注册表（内置只有 browser、SenseNova 必须作为用户端点才能解析）、设置桥（含 `/cli`、`/cli/set`、非法环境 400）、`guardArgv` 9 拒 7 放、`UsageError` 分类、报错引导文案与 render、`apply(ctx, null)` 四个模块不抛错、设置页写入的 CLI 路径能被 `resolvePixmax` 读到、`skill_install` 双分支（本机 CLI 装/没装都通过）、`paramEntries` 参数回传（跳过 nodeType/prompt、对象与 null）、7 个工具注册、client slot key。
 
 ---
 

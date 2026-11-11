@@ -211,7 +211,9 @@ export function apply(ctx, config = {}) {
         frames: intList('按帧号截帧，如 [96, 120]（仅 ffmpeg 后端；与 every / times 三选一）'),
         from: str('间隔模式的起始时间（默认 0，支持秒数或 mm:ss）'),
         to: str('间隔模式的结束时间（默认视频结尾）'),
-        max_frames: int('最多截多少帧（默认 12，上限 16；超出时均匀抽样）'),
+        max_frames: int(
+          '最多截多少帧（默认 12，上限 16）。这是上限不是配额：times/frames 给几个就是几个；every 模式受时长与步长限制，实际可能更少（如 6 秒视频 every=2 只有 0/2/4 三个采样点）。超过上限时均匀抽样。',
+        ),
         width: int('输出帧最大宽度像素（默认 1280，只缩小不放大）'),
         quality: num('JPEG 质量 0.3-1（默认 0.85）'),
         out: str('帧输出目录；默认 <root>/video-frames/<视频名>-<时间>/'),
@@ -385,7 +387,7 @@ export function apply(ctx, config = {}) {
         {
           type: 'text',
           text: value.scenes.length === 0
-            ? `视频: ${value.path}\n没有检测到超过阈值的镜头切点`
+            ? `视频: ${value.path}\n切点 0 个：没有检测到超过阈值的镜头切点`
             : `视频: ${value.path}\n切点 ${value.count} 个:\n${value.scenes.map((scene) => `  ${scene.display}  (${scene.time}s)`).join('\n')}`,
         },
       ],

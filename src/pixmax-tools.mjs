@@ -440,6 +440,55 @@ function planOnly(a) {
   return a.dry_run === false ? [] : ['--dry-run']
 }
 
+/** Params that must never be replayed through `-s`. */
+const PARAM_SKIP = new Set(['nodeType', 'prompt'])
+
+export function paramEntries(params, skipKeys = new Set()) {
+  const entries = []
+  for (const [key, value] of Object.entries(params || {})) {
+    if (PARAM_SKIP.has(key) || skipKeys.has(key)) continue
+    if (value === null || value === undefined) continue
+    if (typeof value === 'object') continue
+    entries.push(`${key}=${String(value)}`)
+  }
+  return entries
+}
+
+async function readNodeParams(ctx, config, selector, timeoutSec) {
+  const result = await runPixmax(ctx, config, ['canvas', 'nodes'], timeoutSec)
+  if (!result.ok) return null
+  let data
+  try {
+    data = JSON.parse(result.json)
+  } catch {
+    return null
+  }
+  const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.nodes) ? data.nodes : []
+  const wanted = String(selector || '')
+  const hit = list.find((node) => node && (node.uuid === wanted || node.nodeKey === wanted || node.label === wanted))
+  return hit?.params || null
+}
+
+/**
+ * `pixmax node update` replaces params wholesale: the CLI builds `params` from
+ * an empty object plus whatever `-s` supplies, so an update that only passes
+ * `--prompt` silently drops model/duration/resolution/... Replay the node's
+ * current params so prompt edits cannot wipe the generation settings.
+ * Opt out with `merge_params: false`.
+ */
+async function mergeNodeParams(ctx, config, args) {
+  if (args.merge_params === false) return args
+  if (Array.isArray(args.command)) return args
+  const userEntries = (Array.isArray(args.set) ? args.set : []).map((entry) => String(entry))
+  const userKeys = new Set(userEntries.map((entry) => entry.split('=')[0].trim()))
+  if (typeof args.model === 'string' && args.model.trim()) userKeys.add('model')
+  const current = await readNodeParams(ctx, config, args.selector, args.timeout)
+  if (!current) return args
+  const preserved = paramEntries(current, userKeys)
+  if (preserved.length === 0) return args
+  return { ...args, set: [...preserved, ...userEntries] }
+}
+
 /**
  * Validate argv. Throws a readable error instead of running something that
  * could spend credits, log in interactively, or override the plugin's own
@@ -624,6 +673,7 @@ export function apply(ctx, config = {}) {
       '工具会拦截一切提交型参数（--run/--submit/--execute/--live）、裸提交命令（tasks submit-batch 等）与非 GET 的 raw；创建/修改节点、规划类命令默认带 --dry-run（dry_run=false 才是真正的免费写入）。' +
       'skill_install 把 CLI 自带的 skill（SKILL.md + references + README/PIXMAX）复制进 DSH skills 目录，装好即可被技能目录发现。' +
       '需要 selector/items/prompt 的 action 会明确报错；命令固定加 --json。' +
+      'node_update 会自动回传节点现有的生成参数（model/duration/resolution 等）：CLI 的 node update 会整体替换 params，只改 prompt 会丢掉其余参数，插件已代为合并（merge_params=false 可关闭）。' +
       '参数或命令不合法时，返回信息会提示先查阅 pixmax-cli 技能（skill_install 可安装）；未找到/无法启动 Pixmax CLI 时，返回信息会给出安装、登录与配置的完整步骤——请按提示操作，不要重复猜测。',
     parameters: {
       type: 'object',
@@ -671,6 +721,9 @@ export function apply(ctx, config = {}) {
         generated: bool('canvas_nodes / node_list 只看已生成节点'),
         include_audio: bool('视频是否带音频参数（不会提交）'),
         dry_run: bool('规划类命令是否带 --dry-run（默认 true；false = 真正执行免费写入）'),
+        merge_params: bool(
+          'node_update 是否自动回传节点现有的生成参数（默认 true）。Pixmax CLI 的 node update 会整体替换 params，只传 --prompt 会丢掉 model/duration/resolution 等；设为 false 可关闭这层保护。',
+        ),
         x: num('画布 X'),
         y: num('画布 Y'),
         timeout: num('命令超时秒数（默认 120，最大 600）'),
@@ -729,7 +782,8 @@ export function apply(ctx, config = {}) {
           } else {
             const build = ACTIONS[action]
             if (!build) throw new UsageError(`不支持的 action: ${action}`)
-            argv = build(args)
+            const effective = action === 'node_update' ? await mergeNodeParams(ctx, config, args) : args
+            argv = build(effective)
           }
         } else {
           throw new UsageError('需要 action 或 command 之一')
