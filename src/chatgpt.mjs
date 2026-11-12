@@ -125,25 +125,39 @@ async function typePrompt(bridge, tabId, text) {
   return typed
 }
 
-async function clickSend(bridge, tabId) {
-  const result = await bridge.evalIn(
-    tabId,
-    `(() => {
-      const buttons = [...document.querySelectorAll('button')];
-      const send = buttons.filter((x) => {
-        const label = (x.getAttribute('aria-label') || '').trim();
-        return label === '发送' || label === 'Send' || label === 'Send message'
-          || x.getAttribute('data-testid') === 'send-button' || x.id === 'composer-submit-button';
-      });
-      if (send.length === 0) return 'no-send';
-      const clickable = send.find((x) => !x.disabled && x.getBoundingClientRect().width > 0)
-        || send.find((x) => !x.disabled);
-      if (!clickable) return 'disabled';
-      clickable.click();
-      return 'sent';
-    })()`,
+async function clickSend(bridge, tabId, timeoutMs = 30000) {
+  // The send button stays disabled while an attached image is still being
+  // processed; clicking once right after typing fails with "disabled".
+  const deadline = Date.now() + timeoutMs
+  let last = 'disabled'
+  while (Date.now() < deadline) {
+    last = await bridge.evalIn(
+      tabId,
+      `(() => {
+        const buttons = [...document.querySelectorAll('button')];
+        const send = buttons.filter((x) => {
+          const label = (x.getAttribute('aria-label') || '').trim();
+          return label === '发送' || label === 'Send' || label === 'Send message'
+            || x.getAttribute('data-testid') === 'send-button' || x.id === 'composer-submit-button';
+        });
+        if (send.length === 0) return 'no-send';
+        const clickable = send.find((x) => !x.disabled && x.getBoundingClientRect().width > 0)
+          || send.find((x) => !x.disabled);
+        if (!clickable) return 'disabled';
+        clickable.click();
+        return 'sent';
+      })()`,
+    )
+    if (last === 'sent') return
+    if (last === 'no-send') break
+    await sleep(600)
+  }
+  throw new WebError(
+    last === 'no-send'
+      ? '找不到发送按钮'
+      : `发送按钮持续不可用（${Math.round(timeoutMs / 1000)}s 内未启用，附件可能仍在处理）`,
+    'send_failed',
   )
-  if (result !== 'sent') throw new WebError(`发送失败（${result}）：发送按钮不可用`, 'send_failed')
 }
 
 async function currentConversation(bridge, tabId) {
@@ -357,6 +371,7 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
   const tabIdResolved = reused || await bridge.openTab(CHAT_URL, { active: false, waitUntil: 'domcontentloaded', timeoutMs: 30000 })
   const owned = !reused
   let closed = false
+  let attached = 0
   const onAbort = () => {
     bridge.closeTab(tabIdResolved).catch(() => {})
   }
@@ -369,10 +384,18 @@ export async function generateImage({ bridge, prompt, refs = [], timeoutSec = 30
     // attachment chip, so attachments are added only after the box is empty.
     await clearComposer(bridge, tabIdResolved)
     if (refs.length > 0) {
-      await attachFiles(bridge, tabIdResolved, refs)
+      attached = await attachFiles(bridge, tabIdResolved, refs)
       progress(onProgress, `已附加 ${refs.length} 张参考图`)
     }
     await typePrompt(bridge, tabIdResolved, prompt)
+    if (refs.length > 0) {
+      // A re-render while typing can drop the chips; sending without them makes
+      // the model answer "please upload the original image", which is useless.
+      const still = await composerImageCount(bridge, tabIdResolved)
+      if (still < attached) {
+        throw new WebError(`参考图在输入提示词后丢失（composer 里剩 ${still}/${attached}），已中止发送`, 'attachment_lost')
+      }
+    }
     progress(onProgress, `发送生图请求（timeout=${Math.round(timeoutMs / 1000)}s）…`)
     await clickSend(bridge, tabIdResolved)
 
@@ -474,21 +497,69 @@ async function saveImageBytes(bridge, tabId, src, out) {
   return { path: out, bytes: bytes.length }
 }
 
+/** Composer attachment thumbnails render as <img> inside the visible composer. */
+async function composerImageCount(bridge, tabId) {
+  const raw = await bridge.evalIn(
+    tabId,
+    `(() => {
+      const composer = ${PICK_COMPOSER};
+      const form = composer && composer.closest('form');
+      return form ? form.querySelectorAll('img').length : 0;
+    })()`,
+  )
+  return Number(raw) || 0
+}
+
+/**
+ * Attach reference images to the ChatGPT composer.
+ *
+ * ChatGPT ships several hidden `input[type=file]` nodes. The first one accepts
+ * a single image and silently ignores whatever `DOM.setFileInputFiles` writes
+ * into it — the message then goes out with no reference attached and the model
+ * answers "please upload the original image". The composer input is the one
+ * that accepts images AND allows multiple files.
+ *
+ * Thumbnails are counted against a baseline: an existing conversation already
+ * contains images, so an absolute count looks like a finished upload before
+ * anything has arrived.
+ */
 async function attachFiles(bridge, tabId, files) {
   const root = await bridge.cdp(tabId, 'DOM.getDocument', { depth: 0 })
   const rootId = root?.root?.nodeId
   if (!rootId) throw new WebError('无法读取 DOM（DOM.getDocument 失败）', 'dom_unavailable')
-  const queried = await bridge.cdp(tabId, 'DOM.querySelector', { nodeId: rootId, selector: 'input[type=file]' })
+
+  const picked = await bridge.evalIn(
+    tabId,
+    `(() => {
+      const composer = ${PICK_COMPOSER};
+      const scope = (composer && composer.closest('form')) || document;
+      const inputs = [...scope.querySelectorAll('input[type=file]')];
+      if (inputs.length === 0) return -1;
+      const ranked = inputs.map((el, idx) => ({ idx, image: /image/i.test(el.accept || ''), multi: el.multiple === true }));
+      const best = ranked.find((r) => r.image && r.multi) || ranked.filter((r) => r.image).pop() || ranked[ranked.length - 1];
+      document.querySelectorAll('[data-dsh-upload]').forEach((el) => el.removeAttribute('data-dsh-upload'));
+      inputs[best.idx].setAttribute('data-dsh-upload', '1');
+      return best.idx;
+    })()`,
+    { timeoutMs: 15000 },
+  )
+  if (Number(picked) < 0) throw new WebError('页面没有文件上传入口，无法附加参考图', 'no_file_input')
+
+  const queried = await bridge.cdp(tabId, 'DOM.querySelector', { nodeId: rootId, selector: '[data-dsh-upload="1"]' })
   const nodeId = queried?.nodeId
   if (!nodeId) throw new WebError('页面没有文件上传入口，无法附加参考图', 'no_file_input')
+
+  const baseline = await composerImageCount(bridge, tabId)
   await bridge.cdp(tabId, 'DOM.setFileInputFiles', { nodeId, files })
+
   const deadline = Date.now() + 60000
   while (Date.now() < deadline) {
-    const count = await bridge.evalIn(tabId, `document.querySelectorAll('form img').length`)
-    if (Number(count) >= files.length) return
+    const count = await composerImageCount(bridge, tabId)
+    if (count >= baseline + files.length) return count
     await sleep(1000)
   }
-  throw new WebError('参考图上传超时（未出现缩略图）', 'upload_timeout')
+  const seen = (await composerImageCount(bridge, tabId)) - baseline
+  throw new WebError(`参考图上传超时（composer 里只出现 ${Math.max(0, seen)}/${files.length} 个附件）`, 'upload_timeout')
 }
 
 async function collectRenderedImages(bridge, tabId) {

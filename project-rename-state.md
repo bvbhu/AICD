@@ -29,7 +29,7 @@ desktop profile 的 `cordis.patch.yml` 里原有三条 `- id: pixmax-tools / vid
 
 ---
 
-## 二、真机问题与修复（2026-11-11 晚）
+## 二、真机问题与修复（2026-11-11 晚 ～ 11-12）
 
 | 现象 | 根因 | 修复 |
 | --- | --- | --- |
@@ -38,6 +38,7 @@ desktop profile 的 `cordis.patch.yml` 里原有三条 `- id: pixmax-tools / vid
 | 看不到 Agent 预设定义 | 预设声明混在主 patch 的第二个 `- insert:` 块里；DSH 官方约定每个预设一个独立 patch 文件并在 `dsh.bundle.patch` 数组列出；此外 `pixmax-tools` 行启动失败也会影响 bundle 状态 | 拆出 `presets/ai-video-workflow.patch.yml`（单个 `- insert:`），`dsh.bundle.patch` 改为数组；预设内移除 `pixmax-workflow-settings` 子行；预设引用的 15 个内置包均已核对存在 |
 | pixmax 路径无法在插件页配置 | 原先只能手写 `cordis.patch.yml` 的 `config.pixmaxHome` | 设置页卡片新增「Pixmax CLI 路径」区（主目录 + `PIXMAX_ENV`），通过新增的 `/cli` / `/cli/set` 端点读写 `<root>/pixmax-cli.json`；`pixmax-tools` 行也有独立配置入口，并保留 `config.pixmaxHome` 覆盖 |
 | 配置缺失/错误在加载期就报错 | 注册期日志会调 `resolvePixmax(config)` | 注册期完全不碰配置；CLI 检测（`cliState` / spawn 失败）只在 `runPixmax` 调用时执行，错误里附「安装 → 登录 → 环境变量 → 验证」引导，并提示可在设置页改路径 |
+| 浏览器渠道改图失败：ChatGPT 回「请上传需要修改的原图」，不出图 | ① `attachFiles` 用 `querySelector('input[type=file]')` 取第一个输入框——ChatGPT 页面有 4 个隐藏 input，第一个是 `multiple=false` 的单图口，写进去不生效；② 页面同时存在隐藏与可见两套 composer，全局 `form img` 计数把隐藏 form 的图算进基线，导致「上传成功」误判；③ 附件处理期间发送按钮是 disabled，`clickSend` 只点一次就抛错 | ① 在**可见 composer** 的 form 内按 `accept~image` + `multiple=true` 选 input；② 缩略图计数限定在该 form 并用注入前基线做差值；③ 发送前校验附件未丢（`attachment_lost`），`clickSend` 轮询等待按钮可用（最长 30s）。真机验证：46s 出图，背景改白、吊牌完整 |
 
 ---
 
@@ -59,7 +60,7 @@ D:\projects\dsh-pixmax-workflow\
 │  ├─ video-tools.mjs / ffmpeg.mjs / video-frames.mjs
 │  ├─ pixmax-tools.mjs       # pixmax 工具 + guard + 报错引导
 │  ├─ credentials.mjs / bridge.mjs / chatgpt.mjs / job-runner.mjs / store.mjs
-└─ .state/tmp/smoke.mjs     # 95 项自动检查（gitignore，不入 git）
+└─ .state/tmp/smoke.mjs     # 101 项自动检查（gitignore，不入 git）
 ```
 
 `skills/`、`__*`、`.state/`、`conversations/`、`images/`、`video-frames/` 均为 gitignore 的私有材料。
@@ -134,7 +135,7 @@ desktop profile 的 `cordis.patch.yml` 里原有三条 `- id: pixmax-tools / vid
 | 检查项 | 结果 |
 | --- | --- |
 | `node --check`（src + client 全部） | ✅ 0 失败 |
-| `.state/tmp/smoke.mjs` | ✅ **95/95** |
+| `.state/tmp/smoke.mjs` | ✅ **101/101** |
 | 两个 patch 文件 YAML 解析 | ✅ 无 `config: null`；预设 15 个 plugins，无 settings 子行 |
 | preset 引用的内置包 | ✅ 全部存在于 DSH runtime |
 | 远程仓库改名 + 推送 | ✅ `bvbhu/dsh-pixmax-workflow`，main 与 origin/main 同步 |

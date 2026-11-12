@@ -93,7 +93,7 @@ pixmax action="skill_install"  # 把 CLI 自带 SKILL.md + references 装进 ~/.
 
 ```powershell
 node --check src/*.mjs
-node .state/tmp/smoke.mjs    # 95/95：模型注册表、设置桥（含 CLI 配置）、guard、报错引导、params 合并、工具注册
+node .state/tmp/smoke.mjs    # 101/101：模型注册表、设置桥（含 CLI 配置）、guard、报错引导、params 合并、工具注册
 ```
 
 `.state/`、`conversations/`、`images/`、`video-frames/`、`skills/`、`__*` 均为私有工作材料，`.gitignore` 已排除。
