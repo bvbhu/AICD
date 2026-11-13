@@ -51,7 +51,7 @@ D:\projects\dsh-pixmax-workflow\
 ├─ presets/
 │  └─ ai-video-workflow.patch.yml   # 预设声明（单独 patch 文件）
 ├─ client/
-│  └─ pixmax-workflow-settings.js  # 设置卡片（生图模型 + Pixmax CLI 路径），无构建
+│  └─ pixmax-workflow-settings.js  # 设置卡片（生图模型 + CLI 路径 + 积分开关），无构建
 ├─ locale/ icon.svg
 ├─ src/
 │  ├─ settings-host.mjs      # 主行：6 个 HTTP 端点
@@ -60,7 +60,7 @@ D:\projects\dsh-pixmax-workflow\
 │  ├─ video-tools.mjs / ffmpeg.mjs / video-frames.mjs
 │  ├─ pixmax-tools.mjs       # pixmax 工具 + guard + 报错引导
 │  ├─ credentials.mjs / bridge.mjs / chatgpt.mjs / job-runner.mjs / store.mjs
-└─ .state/tmp/smoke.mjs     # 101 项自动检查（gitignore，不入 git）
+└─ .state/tmp/smoke.mjs     # 117 项自动检查（gitignore，不入 git）
 ```
 
 `skills/`、`__*`、`.state/`、`conversations/`、`images/`、`video-frames/` 均为 gitignore 的私有材料。
@@ -83,6 +83,8 @@ D:\projects\dsh-pixmax-workflow\
 仅同源请求接受（跨站 403、错误方法 405）。模型列表存 `<root>/settings.json`，key 存 DSH 凭据中心（`PIXMAX_WORKFLOW_IMAGE_*`），CLI 配置存 `<root>/pixmax-cli.json`。页面只显示「是否配置 + 来源」，永不显示值。
 
 **CLI 路径优先级**：行 `config.pixmaxHome` > 设置页 `<root>/pixmax-cli.json` > 默认 `~/.pixmax-cli`；环境同理（`config.environment` > 文件 > 空）。
+
+**积分任务开关**（2026-11-13 新增）：设置页「积分任务开关」写同一个 `pixmax-cli.json` 的 `allowCreditTasks`，**默认 false**。GET/POST `/credit`、`/credit/set`；行 `config.allowCreditTasks` 优先于设置页。工具在**每次调用时**读取，切换后无需重启 DSH。
 
 **内置模型**：`BUILTIN_MODELS` 只有 `browser/gpt-image-2`。SenseNova 等 OpenAI 兼容端点都是 `settings.json` 里的用户模型；`sensenova` 只是 alias，端点不存在时会报「未知模型」并列出可用 id。
 
@@ -107,7 +109,7 @@ D:\projects\dsh-pixmax-workflow\
 | `video_probe` / `video_frames` / `video_scenes` / `video_sheet` | 主后端 ffmpeg，无 ffmpeg 时探测/截帧回退 Chrome；帧与总览图附加到会话 |
 | `pixmax` | `action` 简写（81 个）或 `command` 数组直通；固定加 `--json` |
 
-**硬拦截**：`--run/--submit/--execute/--live`、裸提交命令（`tasks submit-batch`、`group run`）、非 GET 的 `raw`、`repl`；`video generate-final` 只允许带 `--dry-run`；创建/修改类默认 `--dry-run`。
+**积分保护（默认开，可在设置页关闭）**：`--run/--submit/--execute/--live`、裸提交命令（`tasks quick-submit|submit-batch|template-submit`、`group run`）、不带 `--dry-run` 的 `video generate-final` 一律拒绝；打开「允许执行消耗 Pixmax 积分的任务」后才放行，**放行会真实扣积分**。非 GET 的 `raw` 与 `repl` 无论开关都禁止；创建/修改类默认 `--dry-run`。
 
 **面向模型的报错引导**（`src/pixmax-tools.mjs`）：`UsageError` / `CliMissingError` 分类，`execute` 的 catch 按类型挂 `hint`，`output.schema` 有 `hint` 字段，`render` 显示 `[操作引导]`。参数错误提示查阅 `pixmax-cli` 技能；CLI 缺失给出安装、登录、环境变量、验证四步。
 
@@ -135,7 +137,7 @@ desktop profile 的 `cordis.patch.yml` 里原有三条 `- id: pixmax-tools / vid
 | 检查项 | 结果 |
 | --- | --- |
 | `node --check`（src + client 全部） | ✅ 0 失败 |
-| `.state/tmp/smoke.mjs` | ✅ **101/101** |
+| `.state/tmp/smoke.mjs` | ✅ **117/117** |
 | 两个 patch 文件 YAML 解析 | ✅ 无 `config: null`；预设 15 个 plugins，无 settings 子行 |
 | preset 引用的内置包 | ✅ 全部存在于 DSH runtime |
 | 远程仓库改名 + 推送 | ✅ `bvbhu/dsh-pixmax-workflow`，main 与 origin/main 同步 |
@@ -157,7 +159,7 @@ smoke 覆盖：模型注册表（内置只有 browser、SenseNova 必须作为�
 
 ## 九、重启 DSH 后的复测清单
 
-1. 设置 → 插件 → **dsh-pixmax-workflow**：能看到配置卡片（生图模型 + Pixmax CLI 路径）；`pixmax-tools` 行有「配置」入口。
+1. 设置 → 插件 → **dsh-pixmax-workflow**：能看到配置卡片（生图模型 + Pixmax CLI 路径 + 积分任务开关）；`pixmax-tools` 行有「配置」入口。
 2. 新建会话的预设列表里能看到 **「AI 视频工作流」**；选它后 7 个工具齐全。
 3. 在设置页把 CLI 路径改成错误值：插件不报异常，调用 `pixmax action="doctor"` 才返回安装引导；改回后能跑通。
 4. `pixmax action="node_get"`（缺 selector）→ 返回「查阅 pixmax-cli 技能」提示。

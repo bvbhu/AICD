@@ -61,11 +61,13 @@
               token: 'dsh-local'
               backend: auto
               # ffmpegPath: 'D:/path/to/ffmpeg.exe'
-          # Pixmax: every credit-free operation (submits are blocked by the tool).
-          # CLI home comes from the plugin settings card unless overridden here.
+          # Pixmax: credit-free operations by default. Submit commands stay
+          # blocked unless the settings card enables them (or this row sets
+          # allowCreditTasks: true). CLI home comes from the settings card.
           - id: pixmax-tools
             name: 'dsh-pixmax-workflow/pixmax'
             config: {}
+            # allowCreditTasks: true
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
           - id: compaction

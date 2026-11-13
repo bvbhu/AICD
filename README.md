@@ -34,6 +34,7 @@ dsh plugin --profile desktop add github:bvbhu/dsh-pixmax-workflow
 
 - **生图模型**：内置只有 `browser/gpt-image-2`（ChatGPT 网页）。SenseNova 等 OpenAI Images 兼容端点都是用户模型，存在 `<root>/settings.json`，在设置页里增删改；API key 存 DSH 凭据中心（`PIXMAX_WORKFLOW_IMAGE_<PROVIDER>_API_KEY`），页面只显示「是否配置 + 来源」，永不显示值。
 - **Pixmax CLI 路径**：填 CLI 主目录与 `PIXMAX_ENV`（cn / global），留空用 `~/.pixmax-cli`。写入 `<root>/pixmax-cli.json`，**调用工具时**才读取；也可以在 `pixmax-tools` 行 config 里直接写 `pixmaxHome`（行配置优先）。
+- **积分任务开关**：默认**关闭**。打开后 `pixmax` 才允许执行提交型命令（会真实扣积分）。写入同一个 `pixmax-cli.json` 的 `allowCreditTasks`，调用时读取、**不用重启**；行 config 里写 `allowCreditTasks: true/false` 优先。
 - 路径没配或配错**不会让插件加载失败**，只在调用 `pixmax` 时返回带安装步骤的可读错误。
 
 ## 工具速查
@@ -53,7 +54,7 @@ pixmax action="node_get" selector="<uuid>"
 pixmax command=["node","get","EP2-1组"]
 ```
 
-**硬拦截**：`--run` / `--submit` / `--execute` / `--live`、裸提交命令（`tasks submit-batch`、`group run`）、非 GET 的 `raw`、`repl` 一律拒绝；`video generate-final` 只允许带 `--dry-run`；创建/修改类默认 `--dry-run`（`dry_run: false` 才是真正的免费写入）。
+**积分保护（默认开）**：`--run` / `--submit` / `--execute` / `--live`、裸提交命令（`tasks quick-submit|submit-batch|template-submit`、`group run`）、不带 `--dry-run` 的 `video generate-final` 一律拒绝。在设置页打开「允许执行消耗 Pixmax 积分的任务」后才放行，**放行会真实扣积分**；非 GET 的 `raw` 与 `repl` 无论开关都禁止。创建/修改类默认 `--dry-run`（`dry_run: false` 才是真正的免费写入）。
 
 **报错引导**：参数或用法错误 → 提示查阅 `pixmax-cli` 技能；CLI 未安装 / 无法启动 → 返回「安装 → 登录 → 环境变量 → 验证」完整步骤。提示在返回值的 `hint` 字段，渲染为 `[操作引导]` 段。
 
@@ -93,7 +94,7 @@ pixmax action="skill_install"  # 把 CLI 自带 SKILL.md + references 装进 ~/.
 
 ```powershell
 node --check src/*.mjs
-node .state/tmp/smoke.mjs    # 101/101：模型注册表、设置桥（含 CLI 配置）、guard、报错引导、params 合并、工具注册
+node .state/tmp/smoke.mjs    # 117/117：模型注册表、设置桥（含 CLI / 积分开关）、guard、报错引导、params 合并、工具注册
 ```
 
 `.state/`、`conversations/`、`images/`、`video-frames/`、`skills/`、`__*` 均为私有工作材料，`.gitignore` 已排除。

@@ -6,11 +6,13 @@
  * writes (node create/update/delete/batch, asset upload/download, project file
  * operations, script/storyboard node creation, raw canvas mutations).
  *
- * What it refuses, by construction:
+ * What it refuses by default (opt-in through the settings card):
  *   - any argv containing a submit flag (`--run` and friends), so an
  *     image/video/storyboard/generate node can be created but never submitted;
  *   - the raw submit commands (`tasks quick-submit|submit-batch|template-submit`,
  *     `group run`, `video generate-final` without `--dry-run`);
+ *
+ * Always refused, regardless of the setting:
  *   - `raw <method>` for anything but GET;
  *   - `repl` (interactive) and the CLI's own credential/path overrides.
  *
@@ -24,7 +26,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { resolveSecret } from './credentials.mjs'
-import { loadCliConfig } from './pixmax-config.mjs'
+import { loadCliConfig, loadCreditPolicy } from './pixmax-config.mjs'
 
 export const name = 'dsh-pixmax-workflow-pixmax'
 export const inject = ['tools']
@@ -492,9 +494,14 @@ async function mergeNodeParams(ctx, config, args) {
 /**
  * Validate argv. Throws a readable error instead of running something that
  * could spend credits, log in interactively, or override the plugin's own
- * Pixmax session.
+ * Pixmax session. `options.allowCreditTasks` (default false) unlocks the
+ * submit paths when the user explicitly enabled them in the settings card.
  */
-export function guardArgv(argv) {
+export function guardArgv(argv, options = {}) {
+  const allowCredit = options.allowCreditTasks === true
+  const creditHint = allowCredit
+    ? ''
+    : '如需允许，请在「设置 → 插件 → dsh-pixmax-workflow」打开「允许执行消耗 Pixmax 积分的任务」；开启后提交会真实扣积分。'
   const tokens = argv.filter((token) => !(typeof token === 'string' && token.trim() === '')).map((token) => String(token))
   if (tokens[0] === 'pixmax') tokens.shift()
   const root = tokens[0]
@@ -503,21 +510,21 @@ export function guardArgv(argv) {
   if (!ROOTS.has(root)) throw new UsageError(`不允许的 pixmax 子命令: ${root}`)
   for (const token of tokens) {
     const lower = token.toLowerCase()
-    if (SUBMIT_FLAGS.has(lower)) {
-      throw new UsageError(`该参数会提交生成任务并消耗积分，已被工具拦截: ${token}。节点可以创建/修改，提交请到 Pixmax 界面手动执行。`)
+    if (SUBMIT_FLAGS.has(lower) && !allowCredit) {
+      throw new UsageError(`该参数会提交生成任务并消耗积分，已被工具拦截: ${token}。节点可以创建/修改，提交请到 Pixmax 界面手动执行。${creditHint}`)
     }
     if (FORBIDDEN_FLAGS.has(lower)) throw new UsageError(`该参数由插件管理，不能透传: ${token}`)
   }
   const dryRun = tokens.includes('--dry-run')
   const path = tokens.filter((token) => !token.startsWith('-'))
   for (const blocked of SUBMIT_PATHS) {
-    if (blocked.every((segment, index) => path[index] === segment)) {
-      throw new UsageError(`${blocked.join(' ')} 会直接提交任务并消耗积分，工具不提供；用 --dry-run 的等价命令规划后再到 Pixmax 手动提交。`)
+    if (!allowCredit && blocked.every((segment, index) => path[index] === segment)) {
+      throw new UsageError(`${blocked.join(' ')} 会直接提交任务并消耗积分，工具不提供；用 --dry-run 的等价命令规划后再到 Pixmax 手动提交。${creditHint}`)
     }
   }
   for (const staged of DRY_RUN_ONLY) {
-    if (staged.every((segment, index) => path[index] === segment) && !dryRun) {
-      throw new UsageError(`${staged.join(' ')} 会提交任务并消耗积分；本工具只允许带 --dry-run 的规划调用。`)
+    if (!allowCredit && staged.every((segment, index) => path[index] === segment) && !dryRun) {
+      throw new UsageError(`${staged.join(' ')} 会提交任务并消耗积分；本工具只允许带 --dry-run 的规划调用。${creditHint}`)
     }
   }
   if (root === 'raw' && String(path[1] || '').toLowerCase() !== 'get') {
@@ -609,8 +616,20 @@ const CLI_USAGE_ERROR = /usage:|unrecognized arguments|unknown command|invalid c
 /** A launcher that is not on PATH / an entry.py that vanished. */
 const LAUNCHER_MISSING = /不是内部或外部命令|is not recognized as an internal|command not found|No such file or directory|ENOENT/i
 
+/**
+ * Credit-spending submissions are opt-in. A row's `allowCreditTasks` wins over
+ * the settings card; both default to off. Read at call time, never at
+ * registration, so a toggle takes effect without restarting DSH.
+ */
+function creditAllowed(config = {}) {
+  const fromRow = (config || {}).allowCreditTasks
+  if (typeof fromRow === 'boolean') return fromRow
+  if (fromRow === 'true' || fromRow === 'false') return fromRow === 'true'
+  return loadCreditPolicy((config || {}).root).allowCreditTasks === true
+}
+
 async function runPixmax(ctx, config, argv, timeoutSec) {
-  const tokens = guardArgv(argv)
+  const tokens = guardArgv(argv, { allowCreditTasks: creditAllowed(config) })
   const resolved = resolvePixmax(config)
   const state = cliState(config, resolved)
   if (!state.ready) throw new CliMissingError(`未找到可用的 Pixmax CLI（${state.reason}）`)
@@ -667,10 +686,10 @@ export function apply(ctx, config = {}) {
   ctx.tools.register({
     name: 'pixmax',
     description:
-      '调用 Pixmax CLI 的**全部不消耗积分操作**：读取（doctor/登录/项目/画布/节点/模型/任务/模板/工作流/skill）与免费写入（节点 create/update/delete/batch、canvas 原生增删改、资产上传下载/合规、项目文件增删改移、script/storyboard 节点创建）。' +
+      '调用 Pixmax CLI 的**全部零积分操作**，以及在设置页开启后也能执行提交型操作：读取（doctor/登录/项目/画布/节点/模型/任务/模板/工作流/skill）与免费写入（节点 create/update/delete/batch、canvas 原生增删改、资产上传下载/合规、项目文件增删改移、script/storyboard 节点创建）。' +
       '两种用法：① action 简写（doctor | session_status | auth_whoami | auth_credit | project_list | project_files | canvas_get | canvas_summary | canvas_nodes | node_get | node_list | node_create | node_update | node_delete | node_batch | model_search | model_get | image_generate | video_image_to_video | storyboard_create | script_create | script_rows | tasks_list | tasks_wait | assets_upload | assets_download | templates_list | workflow_list | group_list | skill_install | update_status …）；' +
       '② command 数组直接给 argv，例如 ["node","create","EP2-1组","--type","GENERATE_VIDEO"]。' +
-      '工具会拦截一切提交型参数（--run/--submit/--execute/--live）、裸提交命令（tasks submit-batch 等）与非 GET 的 raw；创建/修改节点、规划类命令默认带 --dry-run（dry_run=false 才是真正的免费写入）。' +
+      '默认拦截一切提交型参数（--run/--submit/--execute/--live）、裸提交命令（tasks submit-batch 等）与不带 --dry-run 的 video generate-final；在「设置 → 插件 → dsh-pixmax-workflow」打开「允许执行消耗 Pixmax 积分的任务」后才放行，**放行会真实扣积分**。非 GET 的 raw 与 repl 无论开关都禁止；创建/修改节点、规划类命令默认带 --dry-run（dry_run=false 才是真正的免费写入）。' +
       'skill_install 把 CLI 自带的 skill（SKILL.md + references + README/PIXMAX）复制进 DSH skills 目录，装好即可被技能目录发现。' +
       '需要 selector/items/prompt 的 action 会明确报错；命令固定加 --json。' +
       'node_update 会自动回传节点现有的生成参数（model/duration/resolution 等）：CLI 的 node update 会整体替换 params，只改 prompt 会丢掉其余参数，插件已代为合并（merge_params=false 可关闭）。' +

@@ -215,8 +215,84 @@ window.__ModuleLoader__.load({
       )
     }
 
+    const creditState = () => call('/credit', { method: 'GET', headers: {} })
+    const creditSave = (enabled) =>
+      call('/credit/set', { method: 'POST', body: JSON.stringify({ allowCreditTasks: enabled }) })
+
+    /** Opt-in switch for credit-spending Pixmax submissions. Off by default. */
+    function CreditPolicyCard() {
+      const [allowed, setAllowed] = React.useState(false)
+      const [loaded, setLoaded] = React.useState(false)
+      const [error, setError] = React.useState('')
+      const [message, setMessage] = React.useState('')
+      const [busy, setBusy] = React.useState(false)
+
+      React.useEffect(() => {
+        creditState()
+          .then((next) => {
+            setAllowed(next.allowCreditTasks === true)
+            setLoaded(true)
+          })
+          .catch((failure) => setError(String(failure.message || failure)))
+      }, [])
+
+      const toggle = async (next) => {
+        setBusy(true)
+        setError('')
+        setMessage('')
+        try {
+          const saved = await creditSave(next)
+          setAllowed(saved.allowCreditTasks === true)
+          setMessage(next ? '已开启：提交型命令会真实消耗 Pixmax 积分。' : '已关闭：提交型命令重新被拦截。')
+        } catch (failure) {
+          setError(String(failure.message || failure))
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      return h(
+        'div',
+        { style: { ...styles.root, marginTop: 12 } },
+        h(
+          'div',
+          { style: styles.head },
+          h('span', { style: styles.title }, '积分任务开关'),
+          h('span', { style: styles.hint }, '默认关闭；开启后 pixmax 工具可以提交生成任务'),
+        ),
+        h(
+          'label',
+          { style: { ...styles.row, cursor: 'pointer' } },
+          h('input', {
+            type: 'checkbox',
+            checked: allowed,
+            disabled: busy || !loaded,
+            onChange: (event) => toggle(event.target.checked),
+          }),
+          h('span', { style: { fontWeight: 600 } }, '允许执行消耗 Pixmax 积分的任务'),
+          h(
+            'span',
+            { style: { ...styles.badge, ...(allowed ? styles.error : styles.ok) } },
+            allowed ? '已开启（危险）' : '已关闭（安全）',
+          ),
+        ),
+        h(
+          'div',
+          { style: styles.hint },
+          '放行范围：--run / --submit / --execute / --live、tasks quick-submit|submit-batch|template-submit、group run、不带 --dry-run 的 video generate-final。这些命令会真实提交并扣积分；raw 非 GET 与 repl 仍始终禁止。',
+        ),
+        h(
+          'div',
+          { style: styles.hint },
+          '下次调用 pixmax 工具时生效，无需重启 DSH。也可在预设/行的 config 里写 allowCreditTasks: true（行配置优先）。',
+        ),
+        error ? h('div', { style: styles.error }, error) : null,
+        message ? h('div', { style: styles.ok }, message) : null,
+      )
+    }
+
     function cliSummaryText() {
-      return 'Pixmax CLI 主目录与运行环境；留空用默认 ~/.pixmax-cli。'
+      return 'Pixmax CLI 主目录与运行环境；积分任务开关（默认关闭）。'
     }
 
     function PixmaxWorkflowCard() {
@@ -544,6 +620,7 @@ window.__ModuleLoader__.load({
         message ? h('div', { style: styles.ok }, message) : null,
         h('div', { style: styles.hint }, 'API key 存放在 DSH 凭据中心；同名环境变量优先（存在时设置页会拒绝写入）。'),
         h(CliConfigCard, null),
+        h(CreditPolicyCard, null),
       )
     }
 
@@ -565,7 +642,7 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('plugins.row.config', () =>
           ctx.slots.register(
             { name: 'plugins.row.config', key: 'dsh-pixmax-workflow#pixmax-tools' },
-            (slotProps) => (slotProps && slotProps.view === 'summary' ? cliSummaryText() : h(CliConfigCard, null)),
+            (slotProps) => (slotProps && slotProps.view === 'summary' ? cliSummaryText() : h('div', null, h(CliConfigCard, null), h(CreditPolicyCard, null))),
           ),
         )
         ctx.slots.inject('plugins.bundle.config', () =>

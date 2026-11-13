@@ -9,6 +9,8 @@
  *   POST /api/dsh-pixmax-workflow/key     → status | set | clear one model's API key
  *   GET  /api/dsh-pixmax-workflow/cli     → Pixmax CLI home / environment (settings card)
  *   POST /api/dsh-pixmax-workflow/cli/set → save the Pixmax CLI home / environment
+ *   GET  /api/dsh-pixmax-workflow/credit  → whether credit-spending submissions are allowed
+ *   POST /api/dsh-pixmax-workflow/credit/set → toggle credit-spending submissions
  *   GET  /api/dsh-pixmax-workflow/health  → liveness and the settings file path
  *
  * Model definitions live in `<root>/settings.json`; API keys live in the DSH
@@ -27,7 +29,7 @@ import {
   saveImageSettings,
 } from './image-models.mjs'
 import { defaultPluginRoot } from './store.mjs'
-import { describeCliConfig, saveCliConfig } from './pixmax-config.mjs'
+import { describeCliConfig, loadCreditPolicy, saveCliConfig, saveCreditPolicy } from './pixmax-config.mjs'
 
 export const name = 'dsh-pixmax-workflow'
 export const inject = ['webServer']
@@ -208,6 +210,13 @@ function buildRoutes({ ctx, config }) {
     route(`${PREFIX}/cli/set`, 'POST', (body) => {
       saveCliConfig(root, body)
       return { ok: true, ...describeCliConfig(root) }
+    }),
+    route(`${PREFIX}/credit`, 'GET', () => ({ ok: true, ...loadCreditPolicy(root) })),
+    route(`${PREFIX}/credit/set`, 'POST', (body) => {
+      if (body?.allowCreditTasks !== true && body?.allowCreditTasks !== false) {
+        throw new Error('allowCreditTasks 必须是 true 或 false')
+      }
+      return { ok: true, ...saveCreditPolicy(root, body.allowCreditTasks) }
     }),
     route(`${PREFIX}/health`, 'GET', () => ({ ok: true, root, path: loadImageSettings(root).path })),
   ]

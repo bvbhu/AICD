@@ -28,10 +28,11 @@ export function loadCliConfig(root = defaultPluginRoot()) {
       path,
       home,
       environment: typeof data.environment === 'string' ? data.environment.trim() : '',
+      allowCreditTasks: data.allowCreditTasks === true,
       configured: home.length > 0,
     }
   } catch {
-    return { path, home: '', environment: '', configured: false }
+    return { path, home: '', environment: '', allowCreditTasks: false, configured: false }
   }
 }
 
@@ -42,10 +43,44 @@ export function saveCliConfig(root = defaultPluginRoot(), input = {}) {
   if (environment && environment !== 'cn' && environment !== 'global') {
     throw new Error('PIXMAX_ENV 只能是 cn 或 global')
   }
+  // Preserve unrelated keys (notably allowCreditTasks) when the CLI path card
+  // saves its own two fields.
+  const path = cliConfigPath(root)
+  let existing = {}
+  try {
+    existing = JSON.parse(readFileSync(path, 'utf8'))
+  } catch {}
+  if (!existing || typeof existing !== 'object' || Array.isArray(existing)) existing = {}
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify({ ...existing, home, environment }, null, 2)}\n`, 'utf8')
+  return { path, home, environment, allowCreditTasks: existing.allowCreditTasks === true, configured: home.length > 0 }
+}
+
+/**
+ * Whether the tool may run Pixmax commands that submit generation tasks and
+ * therefore spend credits. Off by default; the settings card toggles it.
+ */
+export function loadCreditPolicy(root = defaultPluginRoot()) {
+  const path = cliConfigPath(root)
+  try {
+    const data = JSON.parse(readFileSync(path, 'utf8'))
+    return {
+      path,
+      allowCreditTasks: data.allowCreditTasks === true,
+      configured: Object.prototype.hasOwnProperty.call(data, 'allowCreditTasks'),
+    }
+  } catch {
+    return { path, allowCreditTasks: false, configured: false }
+  }
+}
+
+export function saveCreditPolicy(root = defaultPluginRoot(), enabled) {
+  const allow = enabled === true || enabled === 'true' || enabled === 1
+  const current = loadCliConfig(root)
   const path = cliConfigPath(root)
   mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, `${JSON.stringify({ home, environment }, null, 2)}\n`, 'utf8')
-  return { path, home, environment, configured: home.length > 0 }
+  writeFileSync(path, `${JSON.stringify({ home: current.home, environment: current.environment, allowCreditTasks: allow }, null, 2)}\n`, 'utf8')
+  return { path, allowCreditTasks: allow, configured: true }
 }
 
 /** Read-only view used by the settings card. No validation errors here. */
